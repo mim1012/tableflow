@@ -12,10 +12,6 @@ function assertAuthConfig() {
 }
 
 async function callSuperadmin<T>(action: string, body?: unknown): Promise<T> {
-  // getUser() validates with the Auth server (A07-003). getSession() is kept only
-  // for access_token extraction — it cannot be used alone for security decisions.
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('로그인이 필요합니다.')
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('로그인이 필요합니다.')
   assertAuthConfig()
@@ -42,10 +38,9 @@ async function callSuperadmin<T>(action: string, body?: unknown): Promise<T> {
 }
 
 export async function checkSuperAdmin(): Promise<boolean> {
-  // getUser() validates against the Auth server — safe for role checks (A07-003).
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
-  return user.app_metadata?.role === 'super_admin'
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return false
+  return session.user?.app_metadata?.role === 'super_admin'
 }
 
 interface CreateStoreWithOwnerResponse {
@@ -53,9 +48,6 @@ interface CreateStoreWithOwnerResponse {
 }
 
 async function callCreateStoreWithOwner<T>(body: unknown): Promise<T> {
-  // getUser() validates with the Auth server (A07-003). getSession() kept for token.
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('로그인이 필요합니다.')
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('로그인이 필요합니다.')
   assertAuthConfig()
