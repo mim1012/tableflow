@@ -25,9 +25,13 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch {
+    // Supabase 클라이언트 실패 시 미인증으로 처리
+  }
   const pathname = request.nextUrl.pathname
 
   const isSuperAdmin = user?.app_metadata?.role === 'super_admin'
