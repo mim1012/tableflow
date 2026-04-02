@@ -8,9 +8,9 @@ interface AuthContextValue {
   user: StoreUser | null
   loading: boolean
   isFirstLogin: boolean
-  signInWithEmail: (email: string, password: string) => Promise<void>
+  signInWithEmail: (email: string, password: string) => Promise<import('@supabase/supabase-js').User | null>
   signOut: () => Promise<void>
-  refreshStoreUser: () => Promise<(StoreUser & { isFirstLogin: boolean }) | null>
+  refreshStoreUser: (authUser?: import('@supabase/supabase-js').User | null) => Promise<(StoreUser & { isFirstLogin: boolean }) | null>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -67,9 +67,9 @@ export function NextAuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase])
 
-  const refreshStoreUser = useCallback(async () => {
+  const refreshStoreUser = useCallback(async (authUser?: import('@supabase/supabase-js').User | null) => {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    const user = authUser !== undefined ? authUser : (await supabase.auth.getUser()).data.user
     if (user) {
       const storeUser = await fetchStoreUser(user.id, user.email ?? '', user.app_metadata)
       setUser(storeUser)
@@ -130,8 +130,9 @@ export function NextAuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase, refreshStoreUser, fetchStoreUser])
 
   async function signInWithEmail(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
+    return data.user
   }
 
   async function signOut() {

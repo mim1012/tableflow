@@ -9,12 +9,10 @@ import { toast } from 'sonner'
 import { Input } from '@/app/components/ui/input'
 import { Button } from '@/app/components/ui/button'
 import { useAuth } from '@/providers/AuthProvider'
-import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const router = useRouter()
   const { signInWithEmail, refreshStoreUser } = useAuth()
-  const [supabase] = useState(() => createClient())
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
@@ -75,8 +73,8 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      await signInWithEmail(email.trim(), password)
-      const refreshedUser = await refreshStoreUser()
+      const authUser = await signInWithEmail(email.trim(), password)
+      const refreshedUser = await refreshStoreUser(authUser)
       setFailCount(0)
       sessionStorage.removeItem('login_fail_count')
       sessionStorage.removeItem('login_lockout_until')
@@ -86,8 +84,7 @@ export default function LoginPage() {
         return
       }
 
-      const { data: { user } } = await supabase.auth.getUser()
-      const isSuperAdmin = user?.app_metadata?.role === 'super_admin'
+      const isSuperAdmin = authUser?.app_metadata?.role === 'super_admin'
       router.replace(isSuperAdmin ? '/superadmin' : '/admin')
     } catch (err: unknown) {
       const newCount = failCount + 1
