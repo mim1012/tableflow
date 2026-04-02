@@ -90,8 +90,6 @@ const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const supabase = createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('로그인이 필요합니다.')
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error('세션이 만료되었습니다.')
   return {
