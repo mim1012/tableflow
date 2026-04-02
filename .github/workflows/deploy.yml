@@ -57,9 +57,9 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_ID: koxhawvhjjzeylshvdad
 
-  # 4. Vercel 배포 (main push만, migrate 완료 후)
+  # 4. Vercel 배포 (main push만, 빌드 완료 후 — migrate와 독립)
   deploy-vercel:
-    needs: migrate
+    needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
