@@ -73,7 +73,10 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const authUser = await signInWithEmail(email.trim(), password)
+      const loginTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), 15_000)
+      )
+      const authUser = await Promise.race([signInWithEmail(email.trim(), password), loginTimeout])
       const refreshedUser = await refreshStoreUser(authUser)
       setFailCount(0)
       sessionStorage.removeItem('login_fail_count')
@@ -97,7 +100,11 @@ export default function LoginPage() {
         sessionStorage.setItem('login_lockout_until', String(until))
       }
       console.error('Login failed:', err)
-      toast.error('로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.')
+      const isTimeout = err instanceof Error && err.message === 'TIMEOUT'
+      toast.error(isTimeout
+        ? '서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'
+        : '로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.'
+      )
     } finally {
       setLoading(false)
     }

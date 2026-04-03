@@ -112,7 +112,9 @@ export function NextAuthProvider({ children }: { children: React.ReactNode }) {
     // 탭이 백그라운드에서 돌아올 때 세션 갱신 (POS 장시간 사용 대응)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        supabase.auth.getUser().then(({ data: { user: authUser } }) => {
+        // getUser()는 네트워크 요청 → 로그인 요청과 충돌 가능. getSession()으로 로컬 읽기
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          const authUser = session?.user
           if (authUser) {
             fetchStoreUser(authUser.id, authUser.email ?? '', authUser.app_metadata).then((storeUser) => {
               if (storeUser) setUser(storeUser)
