@@ -27,10 +27,10 @@ export async function middleware(request: NextRequest) {
 
   let user = null
   try {
-    const { data } = await supabase.auth.getUser()
-    user = data.user
+    const { data } = await supabase.auth.getSession()
+    user = data.session?.user ?? null
   } catch {
-    // Supabase 클라이언트 실패 시 미인증으로 처리
+    // 세션 읽기 실패 시 미인증으로 처리
   }
   const pathname = request.nextUrl.pathname
 
