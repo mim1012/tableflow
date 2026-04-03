@@ -49,6 +49,7 @@ export default function KDSFullscreenClient() {
         if (data && !isStoreSubscriptionActive(data)) setStoreExpired(true)
         setLoading(false)
       })
+      .catch(() => setLoading(false))
   }, [storeId])
 
   // --- Realtime hooks ---
@@ -112,7 +113,11 @@ export default function KDSFullscreenClient() {
   }
 
   const updateOrderPax = async (id: string, pax: number) => {
-    await apiUpdateOrderPax(id, pax)
+    try {
+      await apiUpdateOrderPax(id, pax)
+    } catch {
+      toast.error('인원 수 변경에 실패했습니다.')
+    }
   }
 
   // --- Derived counts ---
@@ -121,7 +126,7 @@ export default function KDSFullscreenClient() {
   const completedCount = orders.filter((o) => o.status === 'completed').length
 
   // --- Guards ---
-  if (authLoading || loading) {
+  if (authLoading || loading || !user) {
     return (
       <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
         <span className="text-zinc-400 font-bold text-lg">로딩 중...</span>
