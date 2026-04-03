@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Bell, ChefHat, CheckCircle2, RefreshCcw, LayoutDashboard, LayoutGrid,
   UtensilsCrossed, Settings, BarChart4, Users, Receipt, Search, LogOut,
-  QrCode, Gift, Volume2, X,
+  QrCode, Volume2, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'motion/react'
@@ -850,9 +850,7 @@ export default function AdminDashboardClient() {
           ] : [
             { id: 'analytics', icon: BarChart4, label: '매출 분석' },
             { id: 'menu', icon: UtensilsCrossed, label: '메뉴 관리' },
-            { id: 'customers', icon: Users, label: '고객/포인트 관리' },
             { id: 'qr', icon: QrCode, label: 'QR 코드 관리' },
-            { id: 'event', icon: Gift, label: '이벤트 관리' },
             { id: 'settings', icon: Settings, label: '매장 설정' },
             ...(user.role === 'owner' ? [{ id: 'staff', icon: Users, label: '직원 관리' }] : []),
           ] as { id: string; icon: React.ComponentType<{ className?: string }>; label: string; badge?: number }[]).map((item) => (
