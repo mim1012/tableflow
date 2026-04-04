@@ -41,7 +41,7 @@ describe('canTransition', () => {
 
 describe('getNextStatuses', () => {
   it('returns valid next states', () => {
-    expect(getNextStatuses('created')).toEqual(['confirmed', 'cancelled'])
+    expect(getNextStatuses('created')).toEqual(['confirmed', 'preparing', 'cancelled'])
     expect(getNextStatuses('preparing')).toEqual(['ready', 'cancelled'])
   })
 

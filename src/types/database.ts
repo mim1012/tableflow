@@ -371,6 +371,7 @@ export interface OrderRow {
   total_price: number
   guest_name: string | null
   special_requests: string | null
+  pax: number
   created_at: string
 }
 
@@ -387,6 +388,7 @@ export interface OrderInsert {
   total_price: number
   guest_name?: string | null
   special_requests?: string | null
+  pax?: number
   created_at?: string
 }
 
@@ -403,6 +405,7 @@ export interface OrderUpdate {
   total_price?: number
   guest_name?: string | null
   special_requests?: string | null
+  pax?: number
   created_at?: string
 }
 

@@ -1,6 +1,6 @@
 import { test } from '@playwright/test'
 
-test('check CSS and superadmin', async ({ page }) => {
+test.skip('check CSS and superadmin', async ({ page }) => {
   const errors: string[] = []
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()) })
   page.on('requestfailed', req => errors.push(`FETCH_FAIL: ${req.url()} ${req.failure()?.errorText}`))

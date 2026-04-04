@@ -4,7 +4,7 @@ import { supabase as _supabase } from '@/lib/supabase'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const supabase = _supabase as any
-import { deleteOrder as apiDeleteOrder, getOrders, updateOrderStatus as apiUpdateOrderStatus } from '@/lib/api/admin'
+import { deleteOrder as apiDeleteOrder, getOrders, updateOrderStatus as apiUpdateOrderStatus, updateOrderPax as apiUpdateOrderPax } from '@/lib/api/admin'
 import type { OrderRow, OrderItemRow, OrderStatus } from '@/types/database'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import { notifyNewOrder, notifyOrderStatusChanged } from '@/hooks/useOrderNotification'
@@ -168,5 +168,16 @@ export function useOrders(storeId: string | null) {
     }
   }, [])
 
-  return { orders, loading, updateOrderStatus, deleteOrder, refetch: fetchOrders }
+  const updateOrderPax = useCallback(async (orderId: string, pax: number) => {
+    try {
+      await apiUpdateOrderPax(orderId, pax)
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, pax } : o))
+      )
+    } catch (err) {
+      console.error('useOrders updateOrderPax:', err)
+    }
+  }, [])
+
+  return { orders, loading, updateOrderStatus, deleteOrder, updateOrderPax, refetch: fetchOrders }
 }

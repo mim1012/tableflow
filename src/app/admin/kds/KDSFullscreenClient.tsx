@@ -26,7 +26,7 @@ function useCurrentTime() {
 }
 
 export default function KDSFullscreenClient() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const storeId = user?.storeId ?? ''
   const now = useCurrentTime()
 
@@ -35,17 +35,27 @@ export default function KDSFullscreenClient() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!storeId) return
-    supabase
-      .from('stores')
-      .select('is_active, subscription_end')
-      .eq('id', storeId)
-      .single()
-      .then(({ data, error }) => {
+    if (!storeId) {
+      setLoading(false)
+      return
+    }
+    let mounted = true
+    ;(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('stores')
+          .select('is_active, subscription_end')
+          .eq('id', storeId)
+          .single()
+        if (!mounted) return
         if (error) { setLoading(false); return }
         if (data && !isStoreSubscriptionActive(data)) setStoreExpired(true)
         setLoading(false)
-      })
+      } catch {
+        if (mounted) setLoading(false)
+      }
+    })()
+    return () => { mounted = false }
   }, [storeId])
 
   // --- Realtime hooks ---
@@ -53,6 +63,7 @@ export default function KDSFullscreenClient() {
     orders: rawOrders,
     updateOrderStatus: apiUpdateOrderStatus,
     deleteOrder: apiDeleteOrder,
+    updateOrderPax: apiUpdateOrderPax,
   } = useOrders(storeId || null)
 
   const { tables: rawTables } = useRealtimeTables(storeId || null)
@@ -107,8 +118,12 @@ export default function KDSFullscreenClient() {
     }
   }
 
-  const updateOrderPax = (_id: string, _pax: number) => {
-    // pax는 로컬 전용 — 전체화면 KDS에서는 표시만
+  const updateOrderPax = async (id: string, pax: number) => {
+    try {
+      await apiUpdateOrderPax(id, pax)
+    } catch {
+      toast.error('인원 수 변경에 실패했습니다.')
+    }
   }
 
   // --- Derived counts ---
@@ -117,7 +132,7 @@ export default function KDSFullscreenClient() {
   const completedCount = orders.filter((o) => o.status === 'completed').length
 
   // --- Guards ---
-  if (!user || loading) {
+  if (authLoading || loading || !user) {
     return (
       <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
         <span className="text-zinc-400 font-bold text-lg">로딩 중...</span>
