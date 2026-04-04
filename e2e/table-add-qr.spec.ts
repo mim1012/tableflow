@@ -1,7 +1,9 @@
 import { test } from '@playwright/test'
 
-test.use({ headless: false, viewport: { width: 1280, height: 720 } })
+// 이 파일은 수동 레코딩/디버깅 전용 스크립트입니다. 자동화 E2E 스위트에서 제외.
+test.use({ viewport: { width: 1280, height: 720 } })
 
+test.skip()
 test('Owner 로그인 → 테이블 추가 → QR URL로 고객 메뉴 접근', async ({ page }) => {
   // 1. Owner 로그인
   await page.goto('http://localhost:3000/login')

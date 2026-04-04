@@ -367,6 +367,11 @@ test.describe('고객 장바구니 E2E (SC-022, SC-023)', () => {
 
     await page.goto(`/m/${STORE_SLUG}/${qrToken}`)
     await page.waitForLoadState('networkidle')
+    // React useEffect가 sessionStorage를 초기화([]로 쓰기)할 때까지 대기
+    await page.waitForFunction(
+      (key) => sessionStorage.getItem(key) !== null,
+      storageKeyA
+    )
 
     // sessionStorage에 테스트 데이터 저장
     await page.evaluate((key) => {
