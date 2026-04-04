@@ -68,17 +68,35 @@ export async function completePasswordChange(page: Page, newPassword: string): P
 }
 
 export function sidebarBtn(page: Page, matcher: string | RegExp) {
-  return page.locator('aside button').filter({ hasText: matcher })
+  // Match buttons in both desktop aside and mobile nav/header (responsive layout)
+  return page.locator('aside button, nav button, header button').filter({ hasText: matcher })
 }
 
 export async function clickSidebarButton(page: Page, matcher: string | RegExp): Promise<void> {
-  const button = sidebarBtn(page, matcher).first()
-  await expect(button, `사이드바 버튼이 보여야 합니다: ${String(matcher)}`).toBeVisible({ timeout: 8000 })
-  await button.click()
+  // Desktop: aside is visible, mobile nav is hidden. Mobile: nav/header is visible, aside is hidden.
+  // Iterate to find and click the first visible match.
+  const buttons = sidebarBtn(page, matcher)
+  await buttons.first().waitFor({ state: 'attached', timeout: 8000 })
+  const count = await buttons.count()
+  for (let i = 0; i < count; i++) {
+    const btn = buttons.nth(i)
+    if (await btn.isVisible()) {
+      await btn.click()
+      return
+    }
+  }
+  throw new Error(`사이드바 버튼이 보여야 합니다: ${String(matcher)}`)
 }
 
 export async function expectNoSidebarButton(page: Page, matcher: string | RegExp): Promise<void> {
-  await expect(sidebarBtn(page, matcher)).toHaveCount(0, { timeout: 5000 })
+  // Count only visible navigation buttons (ignore hidden responsive counterparts)
+  const buttons = sidebarBtn(page, matcher)
+  const count = await buttons.count()
+  let visibleCount = 0
+  for (let i = 0; i < count; i++) {
+    if (await buttons.nth(i).isVisible()) visibleCount++
+  }
+  expect(visibleCount, `사이드바 버튼이 없어야 합니다: ${String(matcher)}`).toBe(0)
 }
 
 export async function expectBodyContains(page: Page, text: string): Promise<void> {

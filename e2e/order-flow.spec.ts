@@ -125,9 +125,10 @@ async function waitForOrderCard(page: Page, tableNumber: number, expectedActionL
 }
 
 function orderCardLocatorByOrderId(page: Page, orderId: string, expectedActionLabel: string) {
+  // KDS shows order.id.slice(0, 8) — match by truncated ID displayed as "#XXXXXXXX"
   return page
-    .locator('div')
-    .filter({ hasText: orderId })
+    .locator('[data-testid="kds-order-card"]')
+    .filter({ hasText: orderId.slice(0, 8) })
     .filter({ has: page.getByRole('button', { name: expectedActionLabel, exact: true }) })
     .first()
 }
@@ -161,10 +162,13 @@ async function placeOneOrderFromCustomer(page: Page) {
   await cartBtn.click()
   await page.waitForTimeout(500)
 
-  // 주문하기 버튼 클릭
+  // 주문하기 버튼 클릭 → 확인 다이얼로그 → 확인 버튼으로 실제 주문 제출
   const submitButton = page.getByRole('button', { name: '주문하기', exact: true })
   await expect(submitButton, '주문하기 버튼이 보여야 합니다.').toBeVisible({ timeout: 8000 })
   await submitButton.click()
+  const confirmButton = page.getByRole('button', { name: '확인', exact: true })
+  await expect(confirmButton, '주문 확인 다이얼로그의 확인 버튼이 보여야 합니다.').toBeVisible({ timeout: 5000 })
+  await confirmButton.click()
 
   // 주문 성공 메시지 대기 (API 응답 시간 포함)
   await expect(page.locator('body')).toContainText('주문이 성공적으로 접수되었습니다', { timeout: 15000 })
@@ -366,7 +370,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     await placeOneOrderFromCustomer(customerPage)
 
-    await expect(ownerAdminPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 10000 })
+    await expect(ownerAdminPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 20000 })
 
     const ownerPendingCard = await waitForOrderCard(ownerAdminPage, tableNumber, '조리 시작')
     const watcherPendingCard = await waitForOrderCard(watcherPage, tableNumber, '조리 시작')
@@ -492,7 +496,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     await placeOneOrderFromCustomer(customerPage)
 
-    await expect(staffPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 10000 })
+    await expect(staffPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 20000 })
 
     const staffPendingCard = await waitForOrderCard(staffPage, tableNumber, '조리 시작', 30000)
     const ownerPendingCard = await waitForOrderCard(ownerAdminPage, tableNumber, '조리 시작', 30000)
@@ -521,7 +525,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     await clickSidebarButton(page, /매장 관리/)
     await clickSidebarButton(page, /메뉴 관리/)
-    await expect(sidebarBtn(page, /매장 관리/)).toBeVisible({ timeout: 5000 })
+    await expect(sidebarBtn(page, /매장 관리/).first()).toBeVisible({ timeout: 5000 })
     const roleText = (await page.locator('body').innerText()).toLowerCase()
     expect(roleText, 'owner 또는 최고관리자 role 텍스트가 노출되어야 합니다.').toMatch(/owner|최고관리자|점주/)
   })

@@ -236,13 +236,13 @@ test.describe('메뉴 CRUD E2E (SC-014~SC-019)', () => {
 
     // QR 관리 화면 확인
     await expect(page.locator('h2').filter({ hasText: 'QR' })).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('h3').filter({ hasText: /테이블 \d+/ }).first()).toBeVisible({ timeout: 8000 })
+    await expect(page.locator('h3').filter({ hasText: /\d+번 테이블|테이블 \d+/ }).first()).toBeVisible({ timeout: 8000 })
 
     // 테이블 추가 버튼 클릭
     await page.locator('button').filter({ hasText: '테이블 추가' }).click()
 
-    // 성공 toast 확인
-    await expect(page.locator('body')).toContainText(/새 테이블이 추가되었습니다|추가/, { timeout: 8000 })
+    // 성공 toast 확인 (버튼 텍스트 "테이블 추가"와 구별되도록 구체적으로 매칭)
+    await expect(page.locator('body')).toContainText('테이블이 추가되었습니다', { timeout: 8000 })
 
     // DB에서 테이블 수 증가 확인
     const tableRows = await supabaseGet<{ id: string }>(

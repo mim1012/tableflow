@@ -990,6 +990,7 @@ function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
             <div className="flex gap-1.5">
               <Input
                 type="text"
+                placeholder="8자 이상"
                 value={form.ownerPassword}
                 onChange={(e) => handleChange('ownerPassword', e.target.value)}
                 className="font-mono text-sm"

@@ -12,9 +12,9 @@ export async function createStaffMember(
   name: string,
   role: 'manager' | 'staff',
 ): Promise<void> {
-  // 비밀번호 변경 직후 JWT가 무효화될 수 있으므로 세션 강제 갱신
-  const { data: { session }, error: refreshError } = await supabase.auth.refreshSession()
-  if (refreshError || !session) throw new Error('인증 세션이 없습니다.')
+  // getSession() reads from cookies without a network call (avoids refreshSession() hang with split client instances)
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError || !session) throw new Error('인증 세션이 없습니다.')
 
   const { SUPABASE_URL: supabaseUrl, SUPABASE_ANON_KEY: anonKey } = await import('@/lib/env')
   const res = await fetch(`${supabaseUrl}/functions/v1/create-staff`, {
