@@ -99,6 +99,11 @@ export function NextAuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false)
         return
       }
+      // SIGNED_IN: 로그인 페이지에서 refreshStoreUser를 직접 호출하므로 중복 쿼리 방지
+      if (_event === 'SIGNED_IN') {
+        setLoading(false)
+        return
+      }
       if (session?.user) {
         const storeUser = await fetchStoreUser(session.user.id, session.user.email ?? '', session.user.app_metadata)
         setUser(storeUser)

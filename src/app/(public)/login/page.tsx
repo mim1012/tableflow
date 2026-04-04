@@ -73,11 +73,11 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const loginTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('TIMEOUT')), 15_000)
+      const makeTimeout = (ms: number) => new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), ms)
       )
-      const authUser = await Promise.race([signInWithEmail(email.trim(), password), loginTimeout])
-      const refreshedUser = await refreshStoreUser(authUser)
+      const authUser = await Promise.race([signInWithEmail(email.trim(), password), makeTimeout(15_000)])
+      const refreshedUser = await Promise.race([refreshStoreUser(authUser), makeTimeout(10_000)])
       setFailCount(0)
       sessionStorage.removeItem('login_fail_count')
       sessionStorage.removeItem('login_lockout_until')
