@@ -161,10 +161,13 @@ async function placeOneOrderFromCustomer(page: Page) {
   await cartBtn.click()
   await page.waitForTimeout(500)
 
-  // 주문하기 버튼 클릭
+  // 주문하기 버튼 클릭 → 확인 다이얼로그 → 확인 버튼으로 실제 주문 제출
   const submitButton = page.getByRole('button', { name: '주문하기', exact: true })
   await expect(submitButton, '주문하기 버튼이 보여야 합니다.').toBeVisible({ timeout: 8000 })
   await submitButton.click()
+  const confirmButton = page.getByRole('button', { name: '확인', exact: true })
+  await expect(confirmButton, '주문 확인 다이얼로그의 확인 버튼이 보여야 합니다.').toBeVisible({ timeout: 5000 })
+  await confirmButton.click()
 
   // 주문 성공 메시지 대기 (API 응답 시간 포함)
   await expect(page.locator('body')).toContainText('주문이 성공적으로 접수되었습니다', { timeout: 15000 })

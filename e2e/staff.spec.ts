@@ -148,17 +148,11 @@ test.describe('직원 관리 E2E (SC-011~SC-013, SC-020)', () => {
     await expect(page.locator('body')).toContainText('직원이 삭제됐습니다', { timeout: 8000 })
   })
 
-  test('SC-029: 홈으로 나가기 → 홈 리다이렉트', async ({ page }) => {
+  test('SC-029: 인증된 점주 / 접근 → /admin 리다이렉트', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
-
-    // 사이드바 하단 "홈으로 나가기" 버튼 클릭 (AdminDashboard 사이드바 최하단)
-    const homeBtn = page.locator('button').filter({ hasText: /홈으로 나가기/ }).first()
-    await expect(homeBtn).toBeVisible({ timeout: 5000 })
-    await homeBtn.click()
-
-    // 홈(/)으로 이동 확인
-    await expect(page).toHaveURL('/', { timeout: 10000 })
+    // 미들웨어: 인증된 점주가 / 접근 시 /admin 으로 리다이렉트
+    await page.goto('/')
+    await expect(page).toHaveURL('/admin', { timeout: 10000 })
   })
 
   test('SC-002: 점주 — /superadmin 접근 차단', async ({ page }) => {
@@ -184,7 +178,7 @@ test.describe('직원 관리 E2E (SC-011~SC-013, SC-020)', () => {
     await page.waitForLoadState('networkidle')
 
     await clickSidebarButton(page, /매장 관리/)
-    await clickSidebarButton(page, /매장 설정/)
+    await clickSidebarButton(page, /설정/)  // desktop: '매장 설정', mobile nav: '설정'
 
     // 비밀번호 변경 카드 확인
     await expect(page.locator('body')).toContainText('비밀번호 변경', { timeout: 8000 })

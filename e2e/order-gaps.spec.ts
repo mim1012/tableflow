@@ -20,7 +20,6 @@ import {
   getServiceRoleHeaders,
   supabaseGet,
   supabasePost,
-  supabaseHeaders,
 } from './e2e-helpers'
 
 requireEnv('TEST_SUPERADMIN_EMAIL')
@@ -234,10 +233,14 @@ test.describe('P1 주문 갭 E2E (GAP-07, GAP-09, GAP-17, GAP-28)', () => {
       const priceMatch = cartBody.match(/13[,.]?500/)
       expect(priceMatch, '장바구니에 옵션 포함 가격 13,500원이 표시되어야 합니다').toBeTruthy()
 
-      // 주문하기
+      // 주문하기 → 확인 다이얼로그 → 확인 버튼 클릭
       const submitBtn = anonPage.getByRole('button', { name: '주문하기', exact: true })
       if (await submitBtn.isVisible({ timeout: 3000 })) {
         await submitBtn.click()
+        // 주문확인 다이얼로그가 뜨면 '확인' 버튼으로 실제 주문 제출
+        const confirmBtn = anonPage.getByRole('button', { name: '확인', exact: true })
+        await expect(confirmBtn).toBeVisible({ timeout: 3000 })
+        await confirmBtn.click()
         await expect(anonPage.locator('body')).toContainText('주문이 성공적으로 접수되었습니다', { timeout: 15000 })
       }
     } else {
@@ -289,12 +292,21 @@ test.describe('P1 주문 갭 E2E (GAP-07, GAP-09, GAP-17, GAP-28)', () => {
     const serviceHeaders = getServiceRoleHeaders()
     test.skip(!serviceHeaders, 'SUPABASE_SERVICE_ROLE_KEY 미설정')
 
-    const { url } = getSupabaseConfig()
+    const { url, anonKey } = getSupabaseConfig()
+
+    // create_order_atomic은 service_role을 'authentication required'로 거부하므로
+    // anon 키로 직접 호출 (is_store_accessible 통과, 익명 주문 경로)
+    const anonHeaders = {
+      'Content-Type': 'application/json',
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      Prefer: 'return=representation',
+    }
 
     // Call create_order_atomic with manipulated extra_price: 0
     const rpcRes = await fetch(`${url}/rest/v1/rpc/create_order_atomic`, {
       method: 'POST',
-      headers: { ...serviceHeaders!, Prefer: 'return=representation' },
+      headers: anonHeaders,
       body: JSON.stringify({
         p_store_id: storeId,
         p_table_id: tableId,
@@ -381,10 +393,13 @@ test.describe('P1 주문 갭 E2E (GAP-07, GAP-09, GAP-17, GAP-28)', () => {
       const totalMatch = bodyText.match(/16[,.]?500/)
       expect(totalMatch, '합산 금액이 16,500원이어야 합니다').toBeTruthy()
 
-      // 주문 실행
+      // 주문 실행 → 확인 다이얼로그 → 확인 버튼 클릭
       const submitBtn = anonPage.getByRole('button', { name: '주문하기', exact: true })
       if (await submitBtn.isVisible({ timeout: 3000 })) {
         await submitBtn.click()
+        const confirmBtn = anonPage.getByRole('button', { name: '확인', exact: true })
+        await expect(confirmBtn).toBeVisible({ timeout: 3000 })
+        await confirmBtn.click()
         await expect(anonPage.locator('body')).toContainText('주문이 성공적으로 접수되었습니다', { timeout: 15000 })
       }
     }
@@ -432,13 +447,17 @@ test.describe('P1 주문 갭 E2E (GAP-07, GAP-09, GAP-17, GAP-28)', () => {
     if (await kdsCard.isVisible({ timeout: 8000 })) {
       const deleteBtn = kdsCard.locator('button[title="주문 삭제"]')
       await deleteBtn.click()
-      await page.waitForTimeout(2000)
+
+      // AlertDialog 확인 버튼 클릭 (React modal — 브라우저 dialog 아님)
+      const alertConfirmBtn = page.getByRole('button', { name: '삭제', exact: true })
+      await expect(alertConfirmBtn).toBeVisible({ timeout: 3000 })
+      await alertConfirmBtn.click()
 
       // KDS에서 해당 카드가 사라졌는지 확인
       await expect(
         kdsCard,
         'KDS에서 삭제된 주문 카드가 사라져야 합니다',
-      ).not.toBeVisible({ timeout: 5000 })
+      ).not.toBeVisible({ timeout: 8000 })
     } else {
       // KDS에 카드가 안 보이면 API fallback으로 삭제
       await fetch(`${url}/rest/v1/orders?id=eq.${orderId}`, {
