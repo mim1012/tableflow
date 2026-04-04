@@ -33,9 +33,10 @@ export default function KDSPanel({
   const pendingOrders = orders.filter(o => o.status === 'pending');
   const preparingOrders = orders.filter(o => o.status === 'preparing');
   const completedOrders = orders.filter(o => o.status === 'completed');
+  const servedOrders = orders.filter(o => o.status === 'served');
 
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [mobileTab, setMobileTab] = useState<'pending' | 'preparing' | 'completed'>('pending');
+  const [mobileTab, setMobileTab] = useState<'pending' | 'preparing' | 'completed' | 'served'>('pending');
 
   const handleDeleteConfirm = () => {
     if (deleteTargetId) {
@@ -62,7 +63,7 @@ export default function KDSPanel({
 
       {/* 모바일 탭 전환 */}
       <div className="flex md:hidden gap-1 mb-4 p-1 bg-zinc-100 rounded-2xl shrink-0">
-        {([['pending', '신규 주문', pendingOrders.length, 'text-red-500'], ['preparing', '조리중', preparingOrders.length, 'text-orange-500'], ['completed', '서빙 대기', completedOrders.length, 'text-green-500']] as const).map(([tab, label, count, color]) => (
+        {([['pending', '신규', pendingOrders.length, 'text-red-500'], ['preparing', '조리중', preparingOrders.length, 'text-orange-500'], ['completed', '서빙대기', completedOrders.length, 'text-green-500'], ['served', '완료', servedOrders.length, 'text-zinc-400']] as const).map(([tab, label, count, color]) => (
           <button key={tab} onClick={() => setMobileTab(tab)} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${mobileTab === tab ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>
             {label}
             {count > 0 && <span className={`font-black text-xs ${color}`}>{count}</span>}
@@ -70,7 +71,7 @@ export default function KDSPanel({
         ))}
       </div>
 
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 md:overflow-hidden pb-4 overflow-y-auto">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 md:overflow-hidden pb-4 overflow-y-auto">
         {/* Column 1: Pending */}
         <div className={`${mobileTab === 'pending' ? 'flex' : 'hidden'} md:flex flex-col bg-zinc-100/50 rounded-3xl p-4 md:overflow-hidden border border-zinc-200/50 min-h-[300px] md:min-h-0 shrink-0`}>
           <div className="flex justify-between items-center mb-4 px-2 shrink-0">
@@ -92,7 +93,7 @@ export default function KDSPanel({
                         </div>
                         <div>
                           <p className="text-xs font-bold text-zinc-400">주문번호</p>
-                          <p className="text-sm font-black text-zinc-800">{order.id}</p>
+                          <p className="text-sm font-black text-zinc-800">#{order.id.slice(0, 8)}</p>
                           <div className="flex items-center gap-1 mt-1">
                             <Users className="w-3.5 h-3.5 text-zinc-400" />
                             <input
@@ -161,7 +162,7 @@ export default function KDSPanel({
                           </div>
                           <div>
                             <p className="text-xs font-bold text-zinc-400">주문번호</p>
-                            <p className="text-sm font-black text-zinc-800">{order.id}</p>
+                            <p className="text-sm font-black text-zinc-800">#{order.id.slice(0, 8)}</p>
                             <div className="flex items-center gap-1 mt-1">
                               <Users className="w-3.5 h-3.5 text-zinc-400" />
                               <input
@@ -230,7 +231,7 @@ export default function KDSPanel({
                         </div>
                         <div>
                           <p className="text-xs font-bold text-zinc-400">주문번호</p>
-                          <p className="text-sm font-black text-zinc-800">{order.id}</p>
+                          <p className="text-sm font-black text-zinc-800">#{order.id.slice(0, 8)}</p>
                           <div className="flex items-center gap-1 mt-1">
                             <Users className="w-3.5 h-3.5 text-zinc-400" />
                             <input
@@ -273,6 +274,53 @@ export default function KDSPanel({
               ))}
             </AnimatePresence>
             {completedOrders.length === 0 && <div className="text-center py-10 text-zinc-400 text-sm font-bold">대기중인 서빙이 없습니다</div>}
+          </div>
+        </div>
+
+        {/* Column 4: Served (History) */}
+        <div className={`${mobileTab === 'served' ? 'flex' : 'hidden'} md:flex flex-col bg-zinc-50 rounded-3xl p-4 md:overflow-hidden border border-zinc-200/50 min-h-[300px] md:min-h-0 shrink-0 opacity-60`}>
+          <div className="flex justify-between items-center mb-4 px-2 shrink-0">
+            <h3 className="font-black text-lg text-zinc-400 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-zinc-400"></span> 완료
+            </h3>
+            <span className="bg-white text-zinc-500 font-black text-sm px-3 py-1 rounded-xl shadow-sm border border-zinc-200">{servedOrders.length}건</span>
+          </div>
+          <div className="flex-1 md:overflow-y-auto space-y-3 pr-1 scrollbar-hide">
+            <AnimatePresence>
+              {servedOrders.map(order => (
+                <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} key={order.id} className="bg-white rounded-2xl border border-zinc-100 overflow-hidden flex flex-col relative">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-zinc-300" />
+                  <div className="p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-zinc-100 text-zinc-500 flex items-center justify-center font-black text-base border border-zinc-200">
+                          T{order.table}
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-zinc-400">주문번호</p>
+                          <p className="text-sm font-black text-zinc-500">#{order.id.slice(0, 8)}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-zinc-400">{order.time}분 전</p>
+                        <button onClick={() => setDeleteTargetId(order.id)} className="text-zinc-300 hover:text-red-400 transition-colors p-1" title="주문 삭제">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <ul className="space-y-1">
+                      {order.items.map((item, idx) => (
+                        <li key={idx} className="flex gap-2 items-start text-zinc-400">
+                          <span className="font-black text-sm w-4 text-center">{item.qty}</span>
+                          <p className="text-sm font-bold leading-tight">{item.name}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {servedOrders.length === 0 && <div className="text-center py-10 text-zinc-300 text-sm font-bold">완료된 주문이 없습니다</div>}
           </div>
         </div>
       </div>

@@ -519,14 +519,12 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
       },
     )
 
-    // After migration: staff/manager UPDATE is blocked (RLS rejects)
-    // Before migration: UPDATE succeeds (vulnerability)
-    if (!updateRes.ok) {
-      // Expected post-migration behavior — RLS is active
-      expect(updateRes.status, 'store_settings UPDATE가 차단되어야 합니다 (RLS)').toBeGreaterThanOrEqual(400)
-    } else {
-      console.warn('[SEC-E22] store_settings UPDATE 차단되지 않음 — 마이그레이션 적용 필요')
-    }
+    // After migration (20260324000002): staff/manager UPDATE on store_settings must be blocked by RLS
+    expect(
+      updateRes.ok,
+      `store_settings UPDATE가 차단되지 않음 (HTTP ${updateRes.status}) — 마이그레이션 20260324000002 적용 확인 필요`,
+    ).toBeFalsy()
+    expect(updateRes.status, 'store_settings UPDATE가 >= 400을 반환해야 합니다 (RLS)').toBeGreaterThanOrEqual(400)
   })
 
   // ────────────────────────────────────────────────────────────
@@ -604,25 +602,16 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
       results.push(res.status)
     }
 
-    // After migration: 16th order should fail (rate limit = 15/min)
-    // Before migration: all 16 succeed
+    // After migration (20260324000003-009): rate limit = 15 orders/min
+    // 처음 15건은 성공, 16번째부터 차단되어야 합니다
     const successCount = results.filter((s) => s === 200).length
     const failedCount = results.filter((s) => s !== 200).length
 
-    if (failedCount > 0 && successCount >= 15) {
-      // Rate limit is active and working correctly
-      expect(
-        results.slice(0, 15).every((s) => s === 200),
-        '처음 15건은 성공해야 합니다',
-      ).toBeTruthy()
-      expect(results[15], '16번째 주문은 차단되어야 합니다 (rate limit)').not.toBe(200)
-    } else if (successCount === 16) {
-      // Rate limit not yet applied — pre-migration state
-      console.warn('[SEC-E25] Rate limit 미적용 — 마이그레이션 적용 필요 (16건 모두 성공)')
-    } else {
-      // Some other error (e.g., auth issue)
-      console.warn(`[SEC-E25] 예상치 못한 결과: success=${successCount}, failed=${failedCount}`)
-    }
+    expect(
+      failedCount,
+      `Rate limit 미작동: ${successCount}/16건이 성공. 마이그레이션 20260324000003-009 적용 확인 필요`,
+    ).toBeGreaterThan(0)
+    expect(results[15], '16번째 주문은 rate limit으로 차단되어야 합니다').not.toBe(200)
   })
 
   test.afterAll(async () => {

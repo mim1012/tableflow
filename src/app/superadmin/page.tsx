@@ -851,7 +851,7 @@ function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const slug = generateSlug()
+    const slug = form.slug.trim() || generateSlug()
 
     if (!form.name) {
       toast.error('매장명은 필수입니다.')
@@ -921,6 +921,15 @@ function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
               onChange={(e) => handleChange('name', e.target.value)}
               required
             />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-zinc-600">슬러그 (URL 식별자)</label>
+            <Input
+              placeholder="예) tasty-restaurant"
+              value={form.slug}
+              onChange={(e) => handleChange('slug', e.target.value)}
+            />
+            <p className="text-xs text-zinc-400">비워두면 자동 생성됩니다</p>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-zinc-600">주소</label>

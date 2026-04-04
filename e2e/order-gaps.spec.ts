@@ -315,28 +315,18 @@ test.describe('P1 주문 갭 E2E (GAP-07, GAP-09, GAP-17, GAP-28)', () => {
       )
       const itemRows = (await items.json()) as Array<{ total_price: number; selected_options: unknown }>
 
-      if (itemRows.length > 0) {
-        // After migration: total_price should be 13500 (12000 + 1500), not 12000
-        // Before migration: total_price will be 12000 (option price ignored)
-        // We check both cases — the test documents the expected behavior
-        const actualTotal = itemRows[0].total_price
-        const hasCorrectOptionPrice = actualTotal === 13500
-        const hasBaseOnlyPrice = actualTotal === 12000
-
-        expect(
-          hasCorrectOptionPrice || hasBaseOnlyPrice,
-          `주문 총가격이 12000(기본) 또는 13500(옵션포함)이어야 합니다. 실제: ${actualTotal}`,
-        ).toBeTruthy()
-
-        // Log for manual verification
-        if (hasBaseOnlyPrice) {
-          console.warn('[SEC-E15] 옵션 가격이 서버에서 재계산되지 않음 — 마이그레이션 적용 필요')
-        }
-      }
+      // After migration (20260324000001): total_price must include option price
+      // 기본가 12000 + 옵션 추가금 1500 = 13500 이어야 합니다
+      expect(itemRows.length, 'order_items가 반환되어야 합니다').toBeGreaterThan(0)
+      const actualTotal = itemRows[0].total_price
+      expect(
+        actualTotal,
+        `옵션 가격이 서버에서 재계산되지 않음: 실제 ${actualTotal}, 기대 13500 (12000 + 1500). 마이그레이션 20260324000001 적용 확인 필요`,
+      ).toBe(13500)
     } else {
-      // RPC 자체가 실패한 경우 (함수명이 다를 수 있음)
+      // RPC 자체가 실패한 경우
       const errText = await rpcRes.text()
-      console.warn('[SEC-E15] create_order_atomic RPC 실패:', rpcRes.status, errText)
+      expect(rpcRes.ok, `create_order_atomic RPC 실패 (HTTP ${rpcRes.status}): ${errText}`).toBeTruthy()
     }
   })
 

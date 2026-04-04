@@ -40,18 +40,21 @@ export default function KDSFullscreenClient() {
       return
     }
     let mounted = true
-    supabase
-      .from('stores')
-      .select('is_active, subscription_end')
-      .eq('id', storeId)
-      .single()
-      .then(({ data, error }) => {
+    ;(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('stores')
+          .select('is_active, subscription_end')
+          .eq('id', storeId)
+          .single()
         if (!mounted) return
         if (error) { setLoading(false); return }
         if (data && !isStoreSubscriptionActive(data)) setStoreExpired(true)
         setLoading(false)
-      })
-      .catch(() => { if (mounted) setLoading(false) })
+      } catch {
+        if (mounted) setLoading(false)
+      }
+    })()
     return () => { mounted = false }
   }, [storeId])
 

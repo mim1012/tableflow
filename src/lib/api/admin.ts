@@ -55,6 +55,18 @@ export async function updateOrderStatus(orderId: string, newStatus: OrderStatus)
   return data
 }
 
+export async function updateOrderPax(orderId: string, pax: number) {
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ pax })
+    .eq('id', orderId)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function deleteOrder(orderId: string) {
   const { error } = await supabase
     .from('orders')

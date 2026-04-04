@@ -98,7 +98,7 @@ export function adaptOrder(o: OrderWithItems, tableNumberMap: Map<string, number
       : o.status,
     time: minutesAgo(o.created_at),
     type: 'Dine-in',
-    pax: 0,
+    pax: (o as any).pax ?? 0,
   };
 }
 
