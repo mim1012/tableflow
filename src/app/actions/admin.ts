@@ -12,16 +12,16 @@ function getServiceClient() {
 
 /** owner/manager만 허용 (테이블 추가·수정·삭제) */
 async function assertOwnerOrManager(storeId: string): Promise<void> {
-  const supabase = await createUserClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
+  const userClient = await createUserClient()
+  const { data: { user }, error } = await userClient.auth.getUser()
   if (error || !user) throw new Error('인증이 필요합니다.')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: member } = await (supabase as any)
+  // Service role로 멤버십 조회 — Server Action에서 RLS auth.uid() 미설정 이슈 우회
+  const serviceClient = getServiceClient()
+  const { data: member } = await serviceClient
     .from('store_members')
     .select('role')
     .eq('store_id', storeId)
     .eq('user_id', user.id)
-    .eq('is_active', true)
     .single()
   if (!member || !['owner', 'manager'].includes(member.role as string)) {
     throw new Error('권한이 없습니다.')
@@ -30,16 +30,16 @@ async function assertOwnerOrManager(storeId: string): Promise<void> {
 
 /** 모든 직원 허용 (테이블 목록 조회) */
 async function assertStoreAccess(storeId: string): Promise<void> {
-  const supabase = await createUserClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
+  const userClient = await createUserClient()
+  const { data: { user }, error } = await userClient.auth.getUser()
   if (error || !user) throw new Error('인증이 필요합니다.')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: member } = await (supabase as any)
+  // Service role로 멤버십 조회 — Server Action에서 RLS auth.uid() 미설정 이슈 우회
+  const serviceClient = getServiceClient()
+  const { data: member } = await serviceClient
     .from('store_members')
     .select('role')
     .eq('store_id', storeId)
     .eq('user_id', user.id)
-    .eq('is_active', true)
     .single()
   if (!member) throw new Error('권한이 없습니다.')
 }

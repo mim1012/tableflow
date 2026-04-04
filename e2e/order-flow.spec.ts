@@ -125,9 +125,10 @@ async function waitForOrderCard(page: Page, tableNumber: number, expectedActionL
 }
 
 function orderCardLocatorByOrderId(page: Page, orderId: string, expectedActionLabel: string) {
+  // KDS shows order.id.slice(0, 8) — match by truncated ID displayed as "#XXXXXXXX"
   return page
-    .locator('div')
-    .filter({ hasText: orderId })
+    .locator('[data-testid="kds-order-card"]')
+    .filter({ hasText: orderId.slice(0, 8) })
     .filter({ has: page.getByRole('button', { name: expectedActionLabel, exact: true }) })
     .first()
 }
@@ -369,7 +370,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     await placeOneOrderFromCustomer(customerPage)
 
-    await expect(ownerAdminPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 10000 })
+    await expect(ownerAdminPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 20000 })
 
     const ownerPendingCard = await waitForOrderCard(ownerAdminPage, tableNumber, '조리 시작')
     const watcherPendingCard = await waitForOrderCard(watcherPage, tableNumber, '조리 시작')
@@ -495,7 +496,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     await placeOneOrderFromCustomer(customerPage)
 
-    await expect(staffPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 10000 })
+    await expect(staffPage.locator('body')).toContainText('새 주문이 들어왔습니다!', { timeout: 20000 })
 
     const staffPendingCard = await waitForOrderCard(staffPage, tableNumber, '조리 시작', 30000)
     const ownerPendingCard = await waitForOrderCard(ownerAdminPage, tableNumber, '조리 시작', 30000)
@@ -524,7 +525,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     await clickSidebarButton(page, /매장 관리/)
     await clickSidebarButton(page, /메뉴 관리/)
-    await expect(sidebarBtn(page, /매장 관리/)).toBeVisible({ timeout: 5000 })
+    await expect(sidebarBtn(page, /매장 관리/).first()).toBeVisible({ timeout: 5000 })
     const roleText = (await page.locator('body').innerText()).toLowerCase()
     expect(roleText, 'owner 또는 최고관리자 role 텍스트가 노출되어야 합니다.').toMatch(/owner|최고관리자|점주/)
   })

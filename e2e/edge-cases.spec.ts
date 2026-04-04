@@ -340,16 +340,20 @@ test.describe('엣지 케이스 E2E (SC-033, SC-038)', () => {
     await expect(storeRow).toBeVisible({ timeout: 8000 })
     await storeRow.locator('button').filter({ hasText: '수정' }).click()
 
-    // 이용기간 수정 다이얼로그 확인
-    await expect(page.locator('text=이용기간 수정')).toBeVisible({ timeout: 5000 })
+    // 매장 상세 다이얼로그 확인 (탭 구조)
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 })
 
-    // 종료일을 2년 뒤로 변경
+    // 구독 탭으로 이동
+    await page.getByRole('tab', { name: '구독' }).click()
+
+    // 종료일을 2년 뒤로 변경 (구독 탭의 두 번째 date input = 이용 종료일)
     const twoYearsLater = new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    const endInput = page.locator('input[type="date"]').nth(1) // 두 번째 date input = 종료일
+    const dialog = page.getByRole('dialog')
+    const endInput = dialog.locator('input[type="date"]').nth(1)
     await endInput.fill(twoYearsLater)
 
-    // 저장 버튼 클릭
-    await page.locator('button').filter({ hasText: '저장' }).click()
+    // 구독 탭 내 저장 버튼 클릭
+    await dialog.getByRole('button', { name: '저장' }).click()
 
     // 성공 toast 확인
     await expect(page.locator('body')).toContainText(/이용기간이 업데이트되었습니다|업데이트/, { timeout: 8000 })
