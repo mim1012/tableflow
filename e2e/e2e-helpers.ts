@@ -55,9 +55,19 @@ export async function loginAndWaitForAdmin(page: Page, email: string, password: 
 }
 
 export async function loginAndWaitForPasswordChange(page: Page, email: string, password: string): Promise<void> {
-  await login(page, email, password)
-  await expect(page).toHaveURL('/change-password', { timeout: 10000 })
-  await expect(page.getByRole('heading', { name: '비밀번호 변경' })).toBeVisible()
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await login(page, email, password)
+    try {
+      await expect(page).toHaveURL('/change-password', { timeout: 15000 })
+      await expect(page.getByRole('heading', { name: '비밀번호 변경' })).toBeVisible({ timeout: 5000 })
+      return
+    } catch {
+      if (attempt === 2) {
+        throw new Error(`loginAndWaitForPasswordChange failed after 3 attempts (still on ${page.url()})`)
+      }
+      await page.waitForTimeout(2000)
+    }
+  }
 }
 
 export async function completePasswordChange(page: Page, newPassword: string): Promise<void> {

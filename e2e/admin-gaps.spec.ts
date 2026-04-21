@@ -386,14 +386,20 @@ test.describe('P1 어드민 갭 E2E (GAP-19, GAP-14, GAP-36)', () => {
     await callBtn.click()
     await page.waitForTimeout(2000)
 
-    // DB에서 호출 상태 확인
-    const callCheck = await fetch(
-      `${url}/rest/v1/waitings?select=status&id=eq.${waitingId}`,
-      { headers: serviceHeaders! },
-    )
-    const callRows = (await callCheck.json()) as WaitingRow[]
-    expect(callRows.length).toBeGreaterThan(0)
-    expect(callRows[0].status, '대기 상태가 called로 변경되어야 합니다').toBe('called')
+    // DB에서 호출 상태 확인 (eventual consistency 대응: 폴링)
+    await expect
+      .poll(
+        async () => {
+          const callCheck = await fetch(
+            `${url}/rest/v1/waitings?select=status&id=eq.${waitingId}`,
+            { headers: serviceHeaders! },
+          )
+          const callRows = (await callCheck.json()) as WaitingRow[]
+          return callRows[0]?.status ?? null
+        },
+        { timeout: 15000, intervals: [500, 1000, 1500] },
+      )
+      .toBe('called')
 
     // UI: 입장 완료 버튼 클릭 (data-testid="waiting-seat")
     const seatBtn = page.locator('[data-testid="waiting-seat"]').first()
