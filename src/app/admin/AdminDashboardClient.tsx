@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Bell, ChefHat, CheckCircle2, RefreshCcw, LayoutDashboard, LayoutGrid,
   UtensilsCrossed, Settings, BarChart4, Users, Receipt, Search, LogOut,
-  QrCode, Volume2, X,
+  QrCode, Volume2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'motion/react'
@@ -21,6 +21,7 @@ import { createOrder } from '@/lib/api/order'
 import { completeWaiting as apiCompleteWaiting } from '@/lib/api/waiting'
 import { callWaitingAction } from '@/app/actions/waiting'
 
+import { primeStaffAlertAudio, isStaffAlertSoundEnabled, setStaffAlertSoundEnabled } from '@/hooks/useOrderNotification'
 import { useOrders } from '@/hooks/useOrders'
 import { useRealtimeTables } from '@/hooks/useRealtimeTables'
 import { useMenuAdmin } from '@/hooks/useMenuAdmin'
@@ -82,12 +83,18 @@ export default function AdminDashboardClient() {
 
   // --- Notification permission ---
   const { showBanner, dismissBanner, requestPermission } = useNotificationPermission()
+  const [staffAlertSoundEnabled, setStaffAlertSoundEnabledState] = useState(true)
+
+  useEffect(() => {
+    setStaffAlertSoundEnabledState(isStaffAlertSoundEnabled())
+  }, [])
 
   useEffect(() => {
     const requestOnce = () => {
       window.removeEventListener('pointerdown', requestOnce)
       window.removeEventListener('keydown', requestOnce)
-      requestPermission()
+      void requestPermission()
+      void primeStaffAlertAudio()
     }
     window.addEventListener('pointerdown', requestOnce, { once: true })
     window.addEventListener('keydown', requestOnce, { once: true })
@@ -937,6 +944,20 @@ export default function AdminDashboardClient() {
             <div className="hidden lg:block w-px h-6 bg-zinc-200"></div>
             <button className="lg:hidden p-2 text-zinc-600 hover:bg-zinc-100 rounded-xl">
               <Search className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !staffAlertSoundEnabled
+                setStaffAlertSoundEnabledState(next)
+                setStaffAlertSoundEnabled(next)
+                if (next) void primeStaffAlertAudio()
+              }}
+              className={`hidden lg:flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-bold transition-colors ${staffAlertSoundEnabled ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-zinc-50 text-zinc-500 border-zinc-200 hover:bg-zinc-100'}`}
+              title={staffAlertSoundEnabled ? '직원 알림음 끄기' : '직원 알림음 켜기'}
+            >
+              <Volume2 className="w-4 h-4" />
+              {staffAlertSoundEnabled ? '알림음 ON' : '알림음 OFF'}
             </button>
             <button className="relative p-2 text-zinc-600 hover:bg-zinc-100 rounded-xl transition-colors">
               <Bell className="w-5 h-5 md:w-6 md:h-6" />

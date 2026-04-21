@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/client'
 
 export interface AlimtalkPayload {
   to: string
-  type: 'POINT_GRANTED' | 'PROMOTION' | 'WAITING_CALLED'
+  type: 'POINT_GRANTED' | 'PROMOTION' | 'WAITING_CREATED' | 'WAITING_CALLED'
   customerName?: string
   points?: number
   message?: string
@@ -21,20 +21,25 @@ export async function broadcastPromotion(
   customers: { phone: string | null; name: string }[],
   message: string,
 ): Promise<{ sent: number; failed: number }> {
-  const targets = customers.filter((c) => c.phone)
-  let sent = 0
-  let failed = 0
+  const targets = customers.filter((c) => c.phone?.trim())
 
-  await Promise.allSettled(
-    targets.map(async (c) => {
-      try {
-        await sendAlimtalk({ to: c.phone!, type: 'PROMOTION', customerName: c.name, message })
-        sent++
-      } catch {
-        failed++
-      }
-    }),
+  const results = await Promise.allSettled(
+    targets.map((customer) =>
+      sendAlimtalk({
+        to: customer.phone!.trim(),
+        type: 'PROMOTION',
+        customerName: customer.name,
+        message,
+      }),
+    ),
   )
 
-  return { sent, failed }
+  return results.reduce(
+    (acc, result) => {
+      if (result.status === 'fulfilled') acc.sent += 1
+      else acc.failed += 1
+      return acc
+    },
+    { sent: 0, failed: 0 },
+  )
 }

@@ -134,18 +134,18 @@ export default function KDSFullscreenClient() {
   // --- Guards ---
   if (authLoading || loading || !user) {
     return (
-      <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
-        <span className="text-zinc-400 font-bold text-lg">로딩 중...</span>
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
+        <span className="text-zinc-500 font-bold text-lg">로딩 중...</span>
       </div>
     )
   }
 
   if (storeExpired) {
     return (
-      <div className="min-h-screen bg-zinc-900 flex flex-col items-center justify-center gap-4 p-8 text-center">
+      <div className="min-h-screen bg-zinc-50 flex flex-col items-center justify-center gap-4 p-8 text-center">
         <span className="text-4xl">⚠️</span>
-        <h1 className="text-xl font-bold text-white">이용 기간이 만료되었습니다</h1>
-        <p className="text-zinc-400 text-sm">구독 기간이 만료되어 서비스를 이용할 수 없습니다.</p>
+        <h1 className="text-xl font-bold text-zinc-900">이용 기간이 만료되었습니다</h1>
+        <p className="text-zinc-600 text-sm">구독 기간이 만료되어 서비스를 이용할 수 없습니다.</p>
         <Link href="/admin" className="text-orange-500 hover:text-orange-400 font-bold text-sm mt-2">
           ← 어드민으로 돌아가기
         </Link>
@@ -156,37 +156,37 @@ export default function KDSFullscreenClient() {
   const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
 
   return (
-    <div className="min-h-screen bg-zinc-900 flex flex-col">
+    <div className="min-h-screen bg-zinc-100 flex flex-col">
       {/* Header Bar */}
-      <header className="h-14 bg-zinc-800 border-b border-zinc-700 px-4 md:px-6 flex items-center justify-between shrink-0">
+      <header className="h-14 bg-white border-b border-zinc-200 px-4 md:px-6 flex items-center justify-between shrink-0 shadow-sm">
         <div className="flex items-center gap-3">
           <Link
             href="/admin"
-            className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm font-bold"
+            className="flex items-center gap-1.5 text-zinc-500 hover:text-zinc-900 transition-colors text-sm font-bold"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden sm:inline">어드민</span>
           </Link>
-          <div className="w-px h-6 bg-zinc-700" />
+          <div className="w-px h-6 bg-zinc-200" />
           <div className="flex items-center gap-2">
             <ChefHat className="w-5 h-5 text-orange-500" />
-            <span className="text-white font-black text-base">{user.storeName ?? 'KDS'}</span>
+            <span className="text-zinc-900 font-black text-base">{user.storeName ?? 'KDS'}</span>
           </div>
         </div>
 
         <div className="flex items-center gap-3 md:gap-4">
-          <div className="flex items-center gap-1.5 text-zinc-400 text-sm font-bold">
+          <div className="flex items-center gap-1.5 text-zinc-600 text-sm font-bold">
             <Clock className="w-4 h-4" />
             <span>{timeStr}</span>
           </div>
           <div className="hidden sm:flex items-center gap-2 text-xs font-black">
-            <span className="bg-red-500/20 text-red-400 px-2.5 py-1 rounded-lg">
+            <span className="bg-red-50 text-red-600 px-2.5 py-1 rounded-lg border border-red-100">
               신규 {pendingCount}
             </span>
-            <span className="bg-orange-500/20 text-orange-400 px-2.5 py-1 rounded-lg">
+            <span className="bg-orange-50 text-orange-600 px-2.5 py-1 rounded-lg border border-orange-100">
               조리 {preparingCount}
             </span>
-            <span className="bg-green-500/20 text-green-400 px-2.5 py-1 rounded-lg">
+            <span className="bg-green-50 text-green-600 px-2.5 py-1 rounded-lg border border-green-100">
               서빙 {completedCount}
             </span>
           </div>
@@ -194,7 +194,7 @@ export default function KDSFullscreenClient() {
       </header>
 
       {/* KDS Content */}
-      <main className="flex-1 p-4 md:p-6 overflow-hidden">
+      <main className="flex-1 p-3 md:p-6 overflow-hidden bg-gradient-to-b from-zinc-50 to-zinc-100">
         <KDSPanel
           orders={orders}
           tables={tables}

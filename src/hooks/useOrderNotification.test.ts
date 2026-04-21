@@ -3,7 +3,40 @@ import {
   requestNotificationPermission,
   notifyNewOrder,
   notifyOrderStatusChanged,
+  __resetStaffAlertAudioContextForTests,
 } from './useOrderNotification'
+
+class MockAudioParam {
+  value = 0
+  setValueAtTime = vi.fn()
+  exponentialRampToValueAtTime = vi.fn()
+}
+
+class MockOscillatorNode {
+  type = 'sine'
+  frequency = new MockAudioParam()
+  connect = vi.fn()
+  start = vi.fn()
+  stop = vi.fn()
+}
+
+class MockGainNode {
+  gain = new MockAudioParam()
+  connect = vi.fn()
+}
+
+class MockAudioContext {
+  currentTime = 1
+  destination = {}
+  resume = vi.fn().mockResolvedValue(undefined)
+  createOscillator = vi.fn(() => new MockOscillatorNode())
+  createGain = vi.fn(() => new MockGainNode())
+}
+
+const sharedAudioContext = new MockAudioContext()
+const audioContextCtor = vi.fn(function MockAudioContextCtor() {
+  return sharedAudioContext as unknown as AudioContext
+})
 
 describe('requestNotificationPermission', () => {
   const originalNotification = globalThis.Notification
@@ -17,7 +50,6 @@ describe('requestNotificationPermission', () => {
   })
 
   it('should return undefined if Notification API not available', async () => {
-    const saved = globalThis.Notification
     // @ts-expect-error — intentionally removing Notification for test
     delete (globalThis as Record<string, unknown>).Notification
     // Also remove from window (jsdom aliases globalThis → window)
@@ -25,12 +57,6 @@ describe('requestNotificationPermission', () => {
     delete (window as Record<string, unknown>).Notification
     const result = await requestNotificationPermission()
     expect(result).toBeUndefined()
-    // restore
-    Object.defineProperty(globalThis, 'Notification', {
-      value: saved,
-      writable: true,
-      configurable: true,
-    })
   })
 
   it('should request permission when status is default', async () => {
@@ -71,6 +97,12 @@ describe('notifyNewOrder', () => {
   let vibrateSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    localStorage.clear()
+    __resetStaffAlertAudioContextForTests()
+    sharedAudioContext.createOscillator.mockClear()
+    sharedAudioContext.createGain.mockClear()
+    sharedAudioContext.resume.mockClear()
+    audioContextCtor.mockClear()
     notificationSpy = vi.fn()
     Object.defineProperty(globalThis, 'Notification', {
       value: Object.assign(notificationSpy, { permission: 'granted' }),
@@ -83,18 +115,39 @@ describe('notifyNewOrder', () => {
       writable: true,
       configurable: true,
     })
+    Object.defineProperty(globalThis, 'AudioContext', {
+      value: audioContextCtor,
+      writable: true,
+      configurable: true,
+    })
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('should vibrate on new order regardless of visibility', () => {
+  it('should play an alert tone on new order', async () => {
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
     Object.defineProperty(document, 'hidden', { value: false, configurable: true })
 
     notifyNewOrder('T1', 'order-123')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(audioContextCtor).toHaveBeenCalled()
+    expect(sharedAudioContext.createOscillator).toHaveBeenCalled()
+    expect(sharedAudioContext.createGain).toHaveBeenCalled()
     expect(vibrateSpy).toHaveBeenCalledWith([200, 100, 200, 100, 400])
+  })
+
+  it('should not play an alert tone when sound is disabled', () => {
+    localStorage.setItem('staff-alert-sound-enabled', 'false')
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true })
+
+    notifyNewOrder('T1', 'order-123')
+
+    expect((globalThis.AudioContext as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled()
   })
 
   it('should show browser notification when tab is hidden', () => {
@@ -122,6 +175,7 @@ describe('notifyOrderStatusChanged', () => {
   let vibrateSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    __resetStaffAlertAudioContextForTests()
     notificationSpy = vi.fn()
     Object.defineProperty(globalThis, 'Notification', {
       value: Object.assign(notificationSpy, { permission: 'granted' }),
@@ -150,8 +204,12 @@ describe('notifyOrderStatusChanged', () => {
     )
   })
 
-  it('should vibrate only for ready status', () => {
+  it('should play a distinct alert tone for ready status', async () => {
     notifyOrderStatusChanged('T1', 'order-1', 'ready')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(sharedAudioContext.createOscillator).toHaveBeenCalled()
     expect(vibrateSpy).toHaveBeenCalledWith([400, 100, 400])
   })
 

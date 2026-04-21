@@ -14,12 +14,6 @@ async function hmacSha256(secret: string, message: string): Promise<string> {
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function getSolapiAuthHeader(apiKey: string, apiSecret: string): string {
-  const date = new Date().toISOString()
-  const salt = crypto.randomUUID().replace(/-/g, '')
-  return `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=PENDING:${apiSecret}:${date + salt}`
-}
-
 async function buildAuthHeader(apiKey: string, apiSecret: string): Promise<string> {
   const date = new Date().toISOString()
   const salt = crypto.randomUUID().replace(/-/g, '')
@@ -31,7 +25,7 @@ async function buildAuthHeader(apiKey: string, apiSecret: string): Promise<strin
 // 메시지 타입
 // ============================================================
 
-type MessageType = 'POINT_GRANTED' | 'PROMOTION' | 'WAITING_CALLED'
+type MessageType = 'POINT_GRANTED' | 'PROMOTION' | 'WAITING_CREATED' | 'WAITING_CALLED'
 
 interface SendRequest {
   to: string          // 수신 전화번호
@@ -77,6 +71,19 @@ function buildFriendtalkPayload(to: string, pfId: string, content: string) {
   }
 }
 
+function buildWaitingKakaoPayload(
+  to: string,
+  pfId: string,
+  templateId: string | undefined,
+  variables: Record<string, string>,
+  fallbackContent: string,
+) {
+  if (templateId) {
+    return buildAlimtalkPayload(to, pfId, templateId, variables)
+  }
+  return buildFriendtalkPayload(to, pfId, fallbackContent)
+}
+
 // ============================================================
 // Main Handler
 // ============================================================
@@ -99,7 +106,18 @@ serve(async (req: Request) => {
       )
     }
 
-    const ALIMTALK_TEMPLATE_WAITING = Deno.env.get('ALIMTALK_TEMPLATE_WAITING_ID') // 웨이팅 호출 템플릿
+    const ALIMTALK_TEMPLATE_WAITING_CREATED = Deno.env.get('ALIMTALK_TEMPLATE_WAITING_CREATED_ID') ?? Deno.env.get('ALIMTALK_TEMPLATE_WAITING_ID')
+    const ALIMTALK_TEMPLATE_WAITING_CALLED = Deno.env.get('ALIMTALK_TEMPLATE_WAITING_CALLED_ID') ?? Deno.env.get('ALIMTALK_TEMPLATE_WAITING_ID')
+    const WAITING_MESSAGE_CONFIG = {
+      WAITING_CREATED: {
+        templateId: ALIMTALK_TEMPLATE_WAITING_CREATED,
+        fallback: (queue: number | undefined, name: string) => `[${name}] 대기번호 ${queue}번으로 등록되었습니다.`,
+      },
+      WAITING_CALLED: {
+        templateId: ALIMTALK_TEMPLATE_WAITING_CALLED,
+        fallback: (queue: number | undefined, name: string) => `[${name}] 대기번호 ${queue}번 고객님, 입장 차례입니다. 빠르게 입장해 주세요! 🙏`,
+      },
+    } as const
 
     const body: SendRequest = await req.json()
     const { to, type, customerName = '고객', points, message, queueNumber, storeName = '' } = body
@@ -128,21 +146,31 @@ serve(async (req: Request) => {
           `${customerName}님, ${(points ?? 0).toLocaleString()}P가 적립되었습니다. 감사합니다!`,
         )
       }
-    } else if (type === 'WAITING_CALLED') {
-      if (ALIMTALK_TEMPLATE_WAITING) {
-        payload = buildAlimtalkPayload(to, KAKAO_CHANNEL_ID, ALIMTALK_TEMPLATE_WAITING, {
+    } else if (type === 'WAITING_CREATED') {
+      const config = WAITING_MESSAGE_CONFIG.WAITING_CREATED
+      payload = buildWaitingKakaoPayload(
+        to,
+        KAKAO_CHANNEL_ID,
+        config.templateId,
+        {
           '#{대기번호}': String(queueNumber ?? ''),
           '#{매장명}': storeName,
-        })
-      } else {
-        // 템플릿 미등록 시 친구톡 fallback
-        payload = buildFriendtalkPayload(
-          to,
-          KAKAO_CHANNEL_ID,
-          `[${storeName}] 대기번호 ${queueNumber}번 고객님, 입장 차례입니다. 빠르게 입장해 주세요! 🙏`,
-        )
-      }
-    } else {
+        },
+        config.fallback(queueNumber, storeName),
+      )
+    } else if (type === 'WAITING_CALLED') {
+      const config = WAITING_MESSAGE_CONFIG.WAITING_CALLED
+      payload = buildWaitingKakaoPayload(
+        to,
+        KAKAO_CHANNEL_ID,
+        config.templateId,
+        {
+          '#{대기번호}': String(queueNumber ?? ''),
+          '#{매장명}': storeName,
+        },
+        config.fallback(queueNumber, storeName),
+      )
+    } else if (type === 'PROMOTION') {
       // PROMOTION: 친구톡 (템플릿 심사 불필요)
       if (!message) {
         return new Response(
@@ -151,6 +179,11 @@ serve(async (req: Request) => {
         )
       }
       payload = buildFriendtalkPayload(to, KAKAO_CHANNEL_ID, message)
+    } else {
+      return new Response(
+        JSON.stringify({ error: `지원하지 않는 알림톡 타입입니다: ${type}` }),
+        { status: 400, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+      )
     }
 
     const result = await sendViasolapi(payload, SOLAPI_API_KEY, SOLAPI_API_SECRET)

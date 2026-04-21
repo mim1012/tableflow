@@ -50,7 +50,7 @@ export default function KDSPanel({
       <div className="flex items-center justify-between mb-4 md:mb-6 shrink-0">
         <div>
           <h2 className="text-xl md:text-2xl font-black text-zinc-900">주방 KDS</h2>
-          <p className="text-xs md:text-sm text-zinc-500 mt-0.5 md:mt-1">주방 작업에 최적화된 큰 글씨와 고대비 UI입니다.</p>
+          <p className="text-xs md:text-sm text-zinc-600 mt-0.5 md:mt-1">주방 작업에 최적화된 큰 글씨와 고대비 UI입니다.</p>
         </div>
         <Link
           href="/admin/kds"
@@ -62,7 +62,7 @@ export default function KDSPanel({
       </div>
 
       {/* 모바일 탭 전환 */}
-      <div className="flex md:hidden gap-1 mb-4 p-1 bg-zinc-100 rounded-2xl shrink-0">
+      <div className="flex md:hidden gap-1 mb-4 p-1 bg-white rounded-2xl border border-zinc-200 shadow-sm shrink-0">
         {([['pending', '신규', pendingOrders.length, 'text-red-500'], ['preparing', '조리중', preparingOrders.length, 'text-orange-500'], ['completed', '서빙대기', completedOrders.length, 'text-green-500'], ['served', '완료', servedOrders.length, 'text-zinc-400']] as const).map(([tab, label, count, color]) => (
           <button key={tab} onClick={() => setMobileTab(tab)} className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${mobileTab === tab ? 'bg-white shadow-sm text-zinc-900' : 'text-zinc-500'}`}>
             {label}
@@ -73,7 +73,7 @@ export default function KDSPanel({
 
       <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 md:overflow-hidden pb-4 overflow-y-auto">
         {/* Column 1: Pending */}
-        <div className={`${mobileTab === 'pending' ? 'flex' : 'hidden'} md:flex flex-col bg-zinc-100/50 rounded-3xl p-4 md:overflow-hidden border border-zinc-200/50 min-h-[300px] md:min-h-0 shrink-0`}>
+        <div className={`${mobileTab === 'pending' ? 'flex' : 'hidden'} md:flex flex-col bg-white rounded-3xl p-4 md:overflow-hidden border border-zinc-200 shadow-[0_10px_30px_rgba(15,23,42,0.16)] min-h-[300px] md:min-h-0 shrink-0`}>
           <div className="flex justify-between items-center mb-4 px-2 shrink-0">
             <h3 className="font-black text-lg text-zinc-800 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> 신규 주문
@@ -127,7 +127,7 @@ export default function KDSPanel({
                       ))}
                     </ul>
                   </div>
-                  <div className="p-3 bg-zinc-50/50">
+                  <div className="p-3 bg-white/80 border-t border-zinc-100/80">
                     <button data-testid="order-action-start" onClick={() => updateOrderStatus(order.id, 'preparing')} className="w-full py-4 bg-zinc-900 text-white font-black text-lg rounded-xl hover:bg-zinc-800 transition-colors shadow-lg active:scale-[0.98]">
                       조리 시작
                     </button>
@@ -140,7 +140,7 @@ export default function KDSPanel({
         </div>
 
         {/* Column 2: Preparing */}
-        <div className={`${mobileTab === 'preparing' ? 'flex' : 'hidden'} md:flex flex-col bg-zinc-100/50 rounded-3xl p-4 md:overflow-hidden border border-zinc-200/50 min-h-[300px] md:min-h-0 shrink-0`}>
+        <div className={`${mobileTab === 'preparing' ? 'flex' : 'hidden'} md:flex flex-col bg-white rounded-3xl p-4 md:overflow-hidden border border-zinc-200 shadow-[0_10px_30px_rgba(15,23,42,0.16)] min-h-[300px] md:min-h-0 shrink-0`}>
           <div className="flex justify-between items-center mb-4 px-2 shrink-0">
             <h3 className="font-black text-lg text-zinc-800 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-orange-500"></span> 조리중
@@ -197,7 +197,7 @@ export default function KDSPanel({
                         ))}
                       </ul>
                     </div>
-                    <div className="p-3 bg-zinc-50/50">
+                    <div className="p-3 bg-white/80 border-t border-zinc-100/80">
                       <button data-testid="order-action-complete" onClick={() => updateOrderStatus(order.id, 'completed')} className="w-full py-4 bg-orange-500 text-white font-black text-lg rounded-xl hover:bg-orange-600 transition-colors shadow-lg shadow-orange-500/20 active:scale-[0.98] flex items-center justify-center gap-2">
                         <Check className="w-6 h-6" /> 조리 완료
                       </button>
@@ -211,9 +211,9 @@ export default function KDSPanel({
         </div>
 
         {/* Column 3: Completed/Serving */}
-        <div className={`${mobileTab === 'completed' ? 'flex' : 'hidden'} md:flex flex-col bg-zinc-100/50 rounded-3xl p-4 md:overflow-hidden border border-zinc-200/50 min-h-[300px] md:min-h-0 shrink-0`}>
+        <div className={`${mobileTab === 'completed' ? 'flex' : 'hidden'} md:flex flex-col bg-white rounded-3xl p-4 md:overflow-hidden border border-zinc-200 shadow-[0_10px_30px_rgba(15,23,42,0.16)] min-h-[300px] md:min-h-0 shrink-0`}>
           <div className="flex justify-between items-center mb-4 px-2 shrink-0">
-            <h3 className="font-black text-lg text-zinc-500 flex items-center gap-2">
+            <h3 className="font-black text-lg text-zinc-700 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-500"></span> 서빙 대기
             </h3>
             <span className="bg-white text-green-600 font-black text-sm px-3 py-1 rounded-xl shadow-sm border border-green-100">{completedOrders.length}건</span>
@@ -265,7 +265,7 @@ export default function KDSPanel({
                       ))}
                     </ul>
                   </div>
-                  <div className="p-3 bg-zinc-50/50">
+                  <div className="p-3 bg-white/80 border-t border-zinc-100/80">
                     <button data-testid="order-action-served" onClick={() => updateOrderStatus(order.id, 'served')} className="w-full py-4 bg-green-500 text-white font-black text-lg rounded-xl hover:bg-green-600 transition-colors shadow-lg shadow-green-500/20 active:scale-[0.98] flex items-center justify-center gap-2">
                       <Check className="w-6 h-6" /> 서빙 완료
                     </button>
@@ -278,12 +278,12 @@ export default function KDSPanel({
         </div>
 
         {/* Column 4: Served (History) */}
-        <div className={`${mobileTab === 'served' ? 'flex' : 'hidden'} md:flex flex-col bg-zinc-50 rounded-3xl p-4 md:overflow-hidden border border-zinc-200/50 min-h-[300px] md:min-h-0 shrink-0 opacity-60`}>
+        <div className={`${mobileTab === 'served' ? 'flex' : 'hidden'} md:flex flex-col bg-white rounded-3xl p-4 md:overflow-hidden border border-zinc-200 shadow-[0_10px_30px_rgba(15,23,42,0.12)] min-h-[300px] md:min-h-0 shrink-0`}>
           <div className="flex justify-between items-center mb-4 px-2 shrink-0">
-            <h3 className="font-black text-lg text-zinc-400 flex items-center gap-2">
+            <h3 className="font-black text-lg text-zinc-600 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-zinc-400"></span> 완료
             </h3>
-            <span className="bg-white text-zinc-500 font-black text-sm px-3 py-1 rounded-xl shadow-sm border border-zinc-200">{servedOrders.length}건</span>
+            <span className="bg-white text-zinc-700 font-black text-sm px-3 py-1 rounded-xl shadow-sm border border-zinc-200">{servedOrders.length}건</span>
           </div>
           <div className="flex-1 md:overflow-y-auto space-y-3 pr-1 scrollbar-hide">
             <AnimatePresence>
