@@ -26,9 +26,15 @@ function makeInsertChain(result: { data: { id: string } | null; error: { message
 
 function makeSelectChain(result: { data: unknown; error: { message: string } | null }) {
   const single = vi.fn().mockResolvedValue(result)
-  const eq = vi.fn().mockReturnValue({ single })
-  const select = vi.fn().mockReturnValue({ eq })
-  return { select, eq, single }
+  const maybeSingle = vi.fn().mockResolvedValue(result)
+  const chain: any = {}
+  chain.eq = vi.fn().mockReturnValue(chain)
+  chain.lt = vi.fn().mockReturnValue(chain)
+  chain.single = single
+  chain.maybeSingle = maybeSingle
+  chain.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result))
+  const select = vi.fn().mockReturnValue(chain)
+  return { select, eq: chain.eq, lt: chain.lt, single, maybeSingle }
 }
 
 function makeUpdateChain(result: { data: { id: string } | null; error: { message: string } | null }) {
@@ -63,7 +69,7 @@ beforeEach(() => {
 })
 
 describe('createWaitingAction', () => {
-  it('creates waiting and sends WAITING_CREATED alimtalk', async () => {
+  it('creates waiting and sends WAITING_CREATED alimtalk with live queue mapping', async () => {
     serviceRpcMock.mockResolvedValue({ data: 7, error: null })
     serviceFromMock
       .mockReturnValueOnce(
@@ -71,6 +77,12 @@ describe('createWaitingAction', () => {
       )
       .mockReturnValueOnce(
         makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 7 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }, { id: 'w4' }], error: null }) as any,
       )
     functionsInvokeMock.mockResolvedValue({ data: { ok: true }, error: null })
 
@@ -87,13 +99,15 @@ describe('createWaitingAction', () => {
         type: 'WAITING_CREATED',
         queueNumber: 7,
         storeName: '테스트매장',
+        teamsAhead: 4,
+        estimatedWaitMinutes: 28,
       },
     })
   })
 })
 
 describe('callWaitingAction', () => {
-  it('calls waiting and sends WAITING_CALLED alimtalk', async () => {
+  it('calls waiting and sends WAITING_CALLED alimtalk with live queue mapping', async () => {
     serverFromMock
       .mockReturnValueOnce(
         makeSelectChain({
@@ -107,6 +121,12 @@ describe('callWaitingAction', () => {
       .mockReturnValueOnce(
         makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
       )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 5 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: [{ id: 'w1' }, { id: 'w2' }], error: null }) as any,
+      )
 
     await expect(callWaitingAction('waiting-1')).resolves.toBeUndefined()
 
@@ -116,6 +136,8 @@ describe('callWaitingAction', () => {
         type: 'WAITING_CALLED',
         queueNumber: 12,
         storeName: '테스트매장',
+        teamsAhead: 2,
+        estimatedWaitMinutes: 10,
       },
     })
   })

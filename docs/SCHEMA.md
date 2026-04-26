@@ -66,8 +66,9 @@ platform_alimtalk_templates  ← 플랫폼 전역 (store 무관)
 |------|------|------|
 | id | uuid PK | |
 | store_id | uuid UNIQUE FK → stores | |
-| kakao_receiver_phone | text | 점주 알림 수신 번호 |
+| kakao_receiver_phone | text | |
 | alimtalk_enabled | bool DEFAULT false | |
+| waiting_minutes_per_team | int DEFAULT 5 | 웨이팅 예상시간 계산용 기본 1팀 처리시간(분) |
 
 > 카카오 채널/키는 플랫폼 환경변수 중앙 관리
 

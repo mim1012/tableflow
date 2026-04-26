@@ -19,6 +19,7 @@ import { fetchCustomers, fetchStorePointEvents, grantPoints, createCustomerByPho
 import type { OrderStats, TopMenuItem, CategorySales } from '@/lib/api/admin'
 import { createOrder } from '@/lib/api/order'
 import { completeWaiting as apiCompleteWaiting } from '@/lib/api/waiting'
+import { getStoreSettings, updateStoreWaitingMinutesPerTeam } from '@/lib/api/storeSettings'
 import { callWaitingAction } from '@/app/actions/waiting'
 
 import { primeStaffAlertAudio, isStaffAlertSoundEnabled, setStaffAlertSoundEnabled } from '@/hooks/useOrderNotification'
@@ -579,6 +580,25 @@ export default function AdminDashboardClient() {
     { id: 4, name: '앞치마 주세요' },
     { id: 5, name: '주문 수정할게요' },
   ])
+  const [waitingMinutesPerTeam, setWaitingMinutesPerTeam] = useState(5)
+  const [isWaitingMinutesLoading, setIsWaitingMinutesLoading] = useState(false)
+  const [isWaitingMinutesSaving, setIsWaitingMinutesSaving] = useState(false)
+
+  useEffect(() => {
+    if (!storeId) return
+
+    setIsWaitingMinutesLoading(true)
+    getStoreSettings(storeId)
+      .then((settings) => {
+        setWaitingMinutesPerTeam(settings?.waiting_minutes_per_team ?? 5)
+      })
+      .catch(() => {
+        toast.error('웨이팅 예상시간 설정을 불러오지 못했습니다.')
+      })
+      .finally(() => {
+        setIsWaitingMinutesLoading(false)
+      })
+  }, [storeId])
 
   const handleAddCallOption = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -593,6 +613,24 @@ export default function AdminDashboardClient() {
   const handleRemoveCallOption = (id: number) => {
     setStaffCallOptions((prev) => prev.filter((opt) => opt.id !== id))
     toast.success('직원 호출 옵션이 삭제되었습니다.')
+  }
+
+  const handleSaveWaitingMinutesPerTeam = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!storeId) return
+
+    const normalized = Math.max(0, Math.floor(waitingMinutesPerTeam))
+    setWaitingMinutesPerTeam(normalized)
+    setIsWaitingMinutesSaving(true)
+
+    try {
+      await updateStoreWaitingMinutesPerTeam(storeId, normalized)
+      toast.success('웨이팅 예상시간 설정이 저장되었습니다.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '웨이팅 예상시간 설정 저장에 실패했습니다.')
+    } finally {
+      setIsWaitingMinutesSaving(false)
+    }
   }
 
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
@@ -1090,6 +1128,11 @@ export default function AdminDashboardClient() {
                 <SettingsPanel
                   staffCallOptions={staffCallOptions}
                   setStaffCallOptions={setStaffCallOptions}
+                  waitingMinutesPerTeam={waitingMinutesPerTeam}
+                  setWaitingMinutesPerTeam={setWaitingMinutesPerTeam}
+                  isWaitingMinutesLoading={isWaitingMinutesLoading}
+                  isWaitingMinutesSaving={isWaitingMinutesSaving}
+                  handleSaveWaitingMinutesPerTeam={handleSaveWaitingMinutesPerTeam}
                   pwNew={pwNew}
                   setPwNew={setPwNew}
                   pwConfirm={pwConfirm}

@@ -96,6 +96,7 @@ export interface StoreSettingsRow {
   store_id: string
   kakao_receiver_phone: string | null
   alimtalk_enabled: boolean
+  waiting_minutes_per_team: number
 }
 
 export interface StoreSettingsInsert {
@@ -103,6 +104,7 @@ export interface StoreSettingsInsert {
   store_id: string
   kakao_receiver_phone?: string | null
   alimtalk_enabled?: boolean
+  waiting_minutes_per_team?: number
 }
 
 export interface StoreSettingsUpdate {
@@ -110,6 +112,7 @@ export interface StoreSettingsUpdate {
   store_id?: string
   kakao_receiver_phone?: string | null
   alimtalk_enabled?: boolean
+  waiting_minutes_per_team?: number
 }
 
 // ------------------------------------------------------------

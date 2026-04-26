@@ -33,6 +33,8 @@ async function sendWaitingAlimtalk(
     type: 'WAITING_CREATED' | 'WAITING_CALLED'
     queueNumber: number
     storeName: string
+    teamsAhead: number
+    estimatedWaitMinutes: number
   },
 ) {
   try {
@@ -45,17 +47,57 @@ async function sendWaitingAlimtalk(
   }
 }
 
+type WaitingNotificationContext = {
+  storeName: string
+  teamsAhead: number
+  estimatedWaitMinutes: number
+}
+
+async function getWaitingNotificationContext(
+  sb: any,
+  waiting: { storeId: string; queueNumber: number },
+): Promise<WaitingNotificationContext> {
+  const [storeName, settingsResult, aheadResult] = await Promise.all([
+    getStoreName(sb, waiting.storeId),
+    sb
+      .from('store_settings')
+      .select('waiting_minutes_per_team')
+      .eq('store_id', waiting.storeId)
+      .maybeSingle(),
+    sb
+      .from('waitings')
+      .select('id')
+      .eq('store_id', waiting.storeId)
+      .eq('status', 'waiting')
+      .lt('queue_number', waiting.queueNumber),
+  ])
+
+  const waitingMinutesPerTeam = Math.max(
+    0,
+    Number(settingsResult?.data?.waiting_minutes_per_team ?? 0),
+  )
+  const teamsAhead = Array.isArray(aheadResult?.data) ? aheadResult.data.length : 0
+
+  return {
+    storeName,
+    teamsAhead,
+    estimatedWaitMinutes: waitingMinutesPerTeam * teamsAhead,
+  }
+}
+
 async function notifyWaitingAlimtalk(
   sb: any,
   waiting: { phone: string; queueNumber: number; storeId: string },
   type: 'WAITING_CREATED' | 'WAITING_CALLED',
 ) {
-  const storeName = await getStoreName(sb, waiting.storeId)
+  const { storeName, teamsAhead, estimatedWaitMinutes } = await getWaitingNotificationContext(sb, waiting)
   void sendWaitingAlimtalk(sb, {
     to: waiting.phone,
     type,
     queueNumber: waiting.queueNumber,
     storeName,
+    teamsAhead,
+    estimatedWaitMinutes,
   })
 }
 

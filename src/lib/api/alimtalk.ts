@@ -10,6 +10,8 @@ export interface AlimtalkPayload {
   message?: string
   queueNumber?: number
   storeName?: string
+  teamsAhead?: number
+  estimatedWaitMinutes?: number
 }
 
 export async function sendAlimtalk(payload: AlimtalkPayload): Promise<void> {

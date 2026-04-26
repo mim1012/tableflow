@@ -301,6 +301,81 @@ serve(async (req) => {
       return json(data, 200, req)
     }
 
+    if (action === 'list-alimtalk-templates') {
+      const managedDefaults = [
+        {
+          event: 'waiting_created',
+          template_code: '',
+          template_body: '[#{매장명}] 웨이팅 접수 완료\n대기번호: #{대기번호}\n내 앞 팀 수: #{앞팀수}\n예상 대기시간: #{예상시간}분',
+          is_active: true,
+        },
+        {
+          event: 'waiting_called',
+          template_code: '',
+          template_body: '[#{매장명}] 입장 요청\n대기번호: #{대기번호}\n내 앞 팀 수: #{앞팀수}\n예상 대기시간: #{예상시간}분',
+          is_active: true,
+        },
+      ]
+
+      for (const template of managedDefaults) {
+        const { error } = await adminClient
+          .from('platform_alimtalk_templates')
+          .upsert({ ...template, updated_at: new Date().toISOString() }, { onConflict: 'event' })
+        if (error) throw error
+      }
+
+      const { data, error } = await adminClient
+        .from('platform_alimtalk_templates')
+        .select('*')
+        .in('event', managedDefaults.map((template) => template.event))
+        .order('event', { ascending: true })
+
+      if (error) throw error
+      return json(data, 200, req)
+    }
+
+    if (action === 'upsert-alimtalk-template') {
+      if (req.method !== 'POST') {
+        return json({ error: 'Method not allowed' }, { status: 405 }, req)
+      }
+
+      let body: { event?: unknown; templateCode?: unknown; templateBody?: unknown; isActive?: unknown }
+      try {
+        body = await req.json()
+      } catch {
+        return json({ error: 'Invalid JSON body' }, { status: 400 }, req)
+      }
+
+      const { event, templateCode, templateBody, isActive } = body
+      if (typeof event !== 'string' || event.trim() === '') {
+        return json({ error: 'event is required' }, { status: 400 }, req)
+      }
+      if (typeof templateCode !== 'string') {
+        return json({ error: 'templateCode must be a string' }, { status: 400 }, req)
+      }
+      if (typeof templateBody !== 'string' || templateBody.trim() === '') {
+        return json({ error: 'templateBody must be a non-empty string' }, { status: 400 }, req)
+      }
+      if (typeof isActive !== 'boolean') {
+        return json({ error: 'isActive must be boolean' }, { status: 400 }, req)
+      }
+
+      const { data, error } = await adminClient
+        .from('platform_alimtalk_templates')
+        .upsert({
+          event,
+          template_code: templateCode,
+          template_body: templateBody,
+          is_active: isActive,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'event' })
+        .select()
+        .single()
+
+      if (error) throw error
+      return json(data, 200, req)
+    }
+
     return json({ error: 'Unknown action' }, 400, req)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : '알 수 없는 오류'

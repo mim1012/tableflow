@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
-import { Building2, Plus, Pencil, LogOut, Utensils, RefreshCw, Copy, KeyRound, Users, Info, CreditCard, UtensilsCrossed, Search } from 'lucide-react'
+import { Building2, Plus, Pencil, LogOut, Utensils, RefreshCw, Copy, KeyRound, Users, Info, CreditCard, UtensilsCrossed, Search, Bell } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/app/components/ui/tabs'
 import { Button } from '@/app/components/ui/button'
 import { Input } from '@/app/components/ui/input'
@@ -25,7 +25,7 @@ import {
 import { Switch } from '@/app/components/ui/switch'
 import { useAuth } from '@/providers/AuthProvider'
 import { createClient } from '@/lib/supabase/client'
-import type { StoreRow, MenuCategoryRow, MenuItemRow } from '@/types/database'
+import type { StoreRow, MenuCategoryRow, MenuItemRow, PlatformAlimtalkTemplateRow } from '@/types/database'
 import { getKstDateString } from '@/lib/utils/subscription'
 
 
@@ -173,6 +173,19 @@ async function getStoreMembers(storeId: string): Promise<StoreMember[]> {
 
 async function getStoreMenuData(storeId: string): Promise<{ categories: MenuCategoryRow[]; items: MenuItemRow[] }> {
   return callSuperadmin<{ categories: MenuCategoryRow[]; items: MenuItemRow[] }>('get-store-menu', { storeId })
+}
+
+async function getAlimtalkTemplates(): Promise<PlatformAlimtalkTemplateRow[]> {
+  return callSuperadmin<PlatformAlimtalkTemplateRow[]>('list-alimtalk-templates')
+}
+
+async function upsertAlimtalkTemplate(params: {
+  event: PlatformAlimtalkTemplateRow['event']
+  templateCode: string
+  templateBody: string
+  isActive: boolean
+}): Promise<PlatformAlimtalkTemplateRow> {
+  return callSuperadmin<PlatformAlimtalkTemplateRow>('upsert-alimtalk-template', params)
 }
 
 async function updateMenuItem(
@@ -923,128 +936,218 @@ function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
   }
 
   return (
-    <div className="max-w-lg">
+    <div className="max-w-2xl">
       <h2 className="text-base font-semibold text-zinc-900 mb-5">새 매장 추가</h2>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {/* Store info */}
-        <div className="rounded-xl border border-zinc-200 p-4 flex flex-col gap-3">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">매장 정보</p>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-zinc-600">매장명 *</label>
-            <Input
-              placeholder="예) 맛있는 식당"
-              value={form.name}
-              onChange={(e) => handleChange('name', e.target.value)}
-              required
-            />
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white rounded-2xl border border-zinc-200 p-5 shadow-sm">
+        <div className="md:col-span-2">
+          <label className="text-xs font-medium text-zinc-600">매장명 *</label>
+          <Input value={form.name} onChange={(e) => handleChange('name', e.target.value)} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="text-xs font-medium text-zinc-600">주소</label>
+          <Input value={form.address} onChange={(e) => handleChange('address', e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-zinc-600">전화번호</label>
+          <Input value={form.phone} onChange={(e) => handleChange('phone', e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-zinc-600">점주 이메일 *</label>
+          <Input type="email" value={form.ownerEmail} onChange={(e) => handleChange('ownerEmail', e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-zinc-600">이용 시작일</label>
+          <Input type="date" value={form.subscriptionStart} onChange={(e) => handleChange('subscriptionStart', e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-zinc-600">이용 종료일</label>
+          <Input type="date" value={form.subscriptionEnd} onChange={(e) => handleChange('subscriptionEnd', e.target.value)} />
+        </div>
+        <div className="md:col-span-2">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs font-medium text-zinc-600">점주 임시 비밀번호 *</label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-zinc-500"
+              onClick={() => handleChange('ownerPassword', generateTempPassword())}
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1" />
+              재생성
+            </Button>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-zinc-600">주소</label>
+          <div className="relative">
             <Input
-              placeholder="예) 서울특별시 강남구 ..."
-              value={form.address}
-              onChange={(e) => handleChange('address', e.target.value)}
+              value={form.ownerPassword}
+              onChange={(e) => handleChange('ownerPassword', e.target.value)}
+              className="pr-20"
             />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-zinc-500 hover:text-zinc-800"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(form.ownerPassword)
+                  toast.success('임시 비밀번호를 복사했습니다.')
+                } catch {
+                  toast.error('복사에 실패했습니다.')
+                }
+              }}
+            >
+              <Copy className="w-3.5 h-3.5 inline mr-1" />
+              복사
+            </button>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-zinc-600">전화번호</label>
-            <Input
-              placeholder="예) 02-1234-5678"
-              value={form.phone}
-              onChange={(e) => handleChange('phone', e.target.value)}
-            />
-          </div>
+          <p className="text-[11px] text-zinc-500 mt-1">8자 이상, 특수문자 1개 이상 포함</p>
         </div>
 
-        {/* Subscription */}
-        <div className="rounded-xl border border-zinc-200 p-4 flex flex-col gap-3">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">이용기간</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-zinc-600">시작일</label>
-              <Input
-                type="date"
-                value={form.subscriptionStart}
-                onChange={(e) => handleChange('subscriptionStart', e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-zinc-600">만료일</label>
-              <Input
-                type="date"
-                value={form.subscriptionEnd}
-                onChange={(e) => handleChange('subscriptionEnd', e.target.value)}
-              />
-            </div>
-          </div>
+        <div className="md:col-span-2 flex justify-end gap-2 pt-2">
+          <Button type="button" variant="outline" onClick={() => onTabChange('stores')} disabled={loading}>취소</Button>
+          <Button type="submit" className="bg-orange-500 hover:bg-orange-600 text-white" disabled={loading}>
+            {loading ? '생성 중...' : '매장 생성'}
+          </Button>
         </div>
-
-        {/* Owner account */}
-        <div className="rounded-xl border border-zinc-200 p-4 flex flex-col gap-3">
-          <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">점주 계정</p>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-zinc-600">점주 이메일 *</label>
-            <Input
-              type="email"
-              placeholder="owner@example.com"
-              value={form.ownerEmail}
-              onChange={(e) => handleChange('ownerEmail', e.target.value)}
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-zinc-600">임시 비밀번호 *</label>
-            <div className="flex gap-1.5">
-              <Input
-                type="text"
-                placeholder="8자 이상"
-                value={form.ownerPassword}
-                onChange={(e) => handleChange('ownerPassword', e.target.value)}
-                className="font-mono text-sm"
-                autoComplete="off"
-                autoCorrect="off"
-                required
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="shrink-0 px-2"
-                title="새로 생성"
-                onClick={() => handleChange('ownerPassword', generateTempPassword())}
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="shrink-0 px-2"
-                title="복사"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(form.ownerPassword)
-                    toast.success('임시 비밀번호가 복사되었습니다.')
-                  } catch {
-                    toast.error('클립보드 복사에 실패했습니다.')
-                  }
-                }}
-              >
-                <Copy className="w-4 h-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-zinc-400">자동 생성됨 · 첫 로그인 시 변경 필요</p>
-          </div>
-        </div>
-
-        <Button
-          type="submit"
-          disabled={loading}
-          className="bg-orange-500 hover:bg-orange-600 text-white w-full"
-        >
-          {loading ? '생성 중...' : '매장 생성'}
-        </Button>
       </form>
+    </div>
+  )
+}
+
+const ALIMTALK_TEMPLATE_LABELS: Record<string, { title: string; description: string }> = {
+  waiting_created: {
+    title: '웨이팅 접수 완료',
+    description: '고객이 웨이팅을 등록한 직후 발송되는 알림톡입니다.',
+  },
+  waiting_called: {
+    title: '입장 요청',
+    description: '매장에서 호출 버튼을 눌렀을 때 발송되는 알림톡입니다.',
+  },
+}
+
+function AlimtalkTemplatesTab() {
+  const [templates, setTemplates] = useState<PlatformAlimtalkTemplateRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [savingEvent, setSavingEvent] = useState<string | null>(null)
+
+  const loadTemplates = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await getAlimtalkTemplates()
+      setTemplates(data)
+    } catch (err: unknown) {
+      const e = err as { message?: string }
+      toast.error(e?.message ?? '알림톡 템플릿을 불러오지 못했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadTemplates()
+  }, [loadTemplates])
+
+  const updateDraft = (event: string, patch: Partial<PlatformAlimtalkTemplateRow>) => {
+    setTemplates((prev) => prev.map((template) => (
+      template.event === event ? { ...template, ...patch } : template
+    )))
+  }
+
+  const handleSave = async (event: string) => {
+    const template = templates.find((item) => item.event === event)
+    if (!template) return
+
+    setSavingEvent(event)
+    try {
+      const saved = await upsertAlimtalkTemplate({
+        event: template.event,
+        templateCode: template.template_code,
+        templateBody: template.template_body,
+        isActive: template.is_active,
+      })
+      updateDraft(event, saved)
+      toast.success('알림톡 템플릿이 저장되었습니다.')
+    } catch (err: unknown) {
+      const e = err as { message?: string }
+      toast.error(e?.message ?? '알림톡 템플릿 저장에 실패했습니다.')
+    } finally {
+      setSavingEvent(null)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-zinc-900">알림톡 템플릿 관리</h2>
+          <p className="text-sm text-zinc-500 mt-1">웨이팅 알림톡 템플릿 코드와 심사용 본문을 superadmin에서 직접 관리합니다.</p>
+        </div>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => loadTemplates()} disabled={loading}>
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          새로고침
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="w-7 h-7 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {templates.map((template) => {
+            const meta = ALIMTALK_TEMPLATE_LABELS[template.event] ?? { title: template.event, description: '' }
+            const isSaving = savingEvent === template.event
+            return (
+              <div key={template.event} className="bg-white rounded-2xl border border-zinc-200 p-5 shadow-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-zinc-900">{meta.title}</h3>
+                      <Badge variant={template.is_active ? 'default' : 'secondary'}>
+                        {template.is_active ? '활성' : '비활성'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">{meta.description}</p>
+                    <p className="text-[11px] text-zinc-400 mt-1 font-mono">event: {template.event}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-500">알림톡 사용</span>
+                    <Switch
+                      checked={template.is_active}
+                      onCheckedChange={(checked) => updateDraft(template.event, { is_active: checked })}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-zinc-600">템플릿 코드</label>
+                    <Input
+                      value={template.template_code}
+                      onChange={(e) => updateDraft(template.event, { template_code: e.target.value })}
+                      placeholder="카카오 승인 템플릿 코드"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-zinc-600">심사용 본문</label>
+                    <textarea
+                      value={template.template_body}
+                      onChange={(e) => updateDraft(template.event, { template_body: e.target.value })}
+                      rows={5}
+                      className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm font-medium text-zinc-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all"
+                    />
+                    <p className="text-[11px] text-zinc-500 mt-2">사용 변수: #{'{매장명}'}, #{'{대기번호}'}, #{'{앞팀수}'}, #{'{예상시간}'}</p>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={() => handleSave(template.event)} disabled={isSaving}>
+                      {isSaving ? '저장 중...' : '템플릿 저장'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -1115,6 +1218,10 @@ export default function SuperAdminPage() {
               <Building2 className="w-4 h-4" />
               매장 목록
             </TabsTrigger>
+            <TabsTrigger value="templates" className="gap-1.5">
+              <Bell className="w-4 h-4" />
+              알림톡 템플릿
+            </TabsTrigger>
             <TabsTrigger value="add" className="gap-1.5">
               <Plus className="w-4 h-4" />
               매장 추가
@@ -1129,6 +1236,10 @@ export default function SuperAdminPage() {
               onMenuView={setMenuViewStore}
               onAddClick={() => setActiveTab('add')}
             />
+          </TabsContent>
+
+          <TabsContent value="templates">
+            <AlimtalkTemplatesTab />
           </TabsContent>
 
           <TabsContent value="add">

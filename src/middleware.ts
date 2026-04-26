@@ -2,6 +2,13 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+  const preview = request.nextUrl.searchParams.get('preview')
+
+  if (process.env.NODE_ENV === 'development' && pathname === '/admin' && preview === 'settings') {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -32,7 +39,6 @@ export async function middleware(request: NextRequest) {
   } catch {
     // 세션 읽기 실패 시 미인증으로 처리
   }
-  const pathname = request.nextUrl.pathname
 
   const isSuperAdmin = user?.app_metadata?.role === 'super_admin'
 

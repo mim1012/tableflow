@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 
 // ============================================================
@@ -26,6 +27,33 @@ async function buildAuthHeader(apiKey: string, apiSecret: string): Promise<strin
 // ============================================================
 
 type MessageType = 'POINT_GRANTED' | 'PROMOTION' | 'WAITING_CREATED' | 'WAITING_CALLED'
+type ManagedTemplateEvent = 'waiting_created' | 'waiting_called'
+
+interface PlatformAlimtalkTemplateRow {
+  event: ManagedTemplateEvent
+  template_code: string
+  template_body: string
+  is_active: boolean
+}
+
+async function getManagedTemplate(event: ManagedTemplateEvent): Promise<PlatformAlimtalkTemplateRow | null> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  if (!supabaseUrl || !serviceRoleKey) return null
+
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  const { data, error } = await adminClient
+    .from('platform_alimtalk_templates')
+    .select('event, template_code, template_body, is_active')
+    .eq('event', event)
+    .maybeSingle()
+
+  if (error || !data) return null
+  return data as PlatformAlimtalkTemplateRow
+}
 
 interface SendRequest {
   to: string          // 수신 전화번호
@@ -33,8 +61,10 @@ interface SendRequest {
   customerName?: string
   points?: number     // POINT_GRANTED 시 적립 포인트
   message?: string    // PROMOTION 시 홍보 메시지
-  queueNumber?: number // WAITING_CALLED 시 대기번호
-  storeName?: string   // WAITING_CALLED 시 매장명
+  queueNumber?: number // WAITING_* 시 실시간 대기번호
+  storeName?: string   // WAITING_* 시 매장명
+  teamsAhead?: number  // WAITING_* 시 발송 직전 내 앞 팀 수
+  estimatedWaitMinutes?: number // WAITING_* 시 예상 대기 시간(분)
 }
 
 // ============================================================
@@ -106,21 +136,46 @@ serve(async (req: Request) => {
       )
     }
 
-    const ALIMTALK_TEMPLATE_WAITING_CREATED = Deno.env.get('ALIMTALK_TEMPLATE_WAITING_CREATED_ID') ?? Deno.env.get('ALIMTALK_TEMPLATE_WAITING_ID')
-    const ALIMTALK_TEMPLATE_WAITING_CALLED = Deno.env.get('ALIMTALK_TEMPLATE_WAITING_CALLED_ID') ?? Deno.env.get('ALIMTALK_TEMPLATE_WAITING_ID')
+    const dbWaitingCreatedTemplate = await getManagedTemplate('waiting_created')
+    const dbWaitingCalledTemplate = await getManagedTemplate('waiting_called')
+    const ALIMTALK_TEMPLATE_WAITING_CREATED = dbWaitingCreatedTemplate
+      ? (dbWaitingCreatedTemplate.is_active ? dbWaitingCreatedTemplate.template_code.trim() || undefined : undefined)
+      : (Deno.env.get('ALIMTALK_TEMPLATE_WAITING_CREATED_ID') ?? Deno.env.get('ALIMTALK_TEMPLATE_WAITING_ID'))
+    const ALIMTALK_TEMPLATE_WAITING_CALLED = dbWaitingCalledTemplate
+      ? (dbWaitingCalledTemplate.is_active ? dbWaitingCalledTemplate.template_code.trim() || undefined : undefined)
+      : (Deno.env.get('ALIMTALK_TEMPLATE_WAITING_CALLED_ID') ?? Deno.env.get('ALIMTALK_TEMPLATE_WAITING_ID'))
     const WAITING_MESSAGE_CONFIG = {
       WAITING_CREATED: {
         templateId: ALIMTALK_TEMPLATE_WAITING_CREATED,
-        fallback: (queue: number | undefined, name: string) => `[${name}] 대기번호 ${queue}번으로 등록되었습니다.`,
+        fallback: (queue: number | undefined, name: string, teamsAhead: number, estimatedWaitMinutes: number) => {
+          const parts = [`[${name}] 웨이팅 접수 완료`, `대기번호 ${queue}번`, `내 앞 ${teamsAhead}팀`]
+          if (estimatedWaitMinutes > 0) parts.push(`예상 ${estimatedWaitMinutes}분`)
+          return parts.join(' · ')
+        },
       },
       WAITING_CALLED: {
         templateId: ALIMTALK_TEMPLATE_WAITING_CALLED,
-        fallback: (queue: number | undefined, name: string) => `[${name}] 대기번호 ${queue}번 고객님, 입장 차례입니다. 빠르게 입장해 주세요! 🙏`,
+        fallback: (queue: number | undefined, name: string, teamsAhead: number, estimatedWaitMinutes: number) => {
+          const parts = [`[${name}] 입장 요청`, `대기번호 ${queue}번`]
+          if (teamsAhead > 0) parts.push(`현재 내 앞 ${teamsAhead}팀`)
+          if (estimatedWaitMinutes > 0) parts.push(`예상 ${estimatedWaitMinutes}분`)
+          return `${parts.join(' · ')}. 빠르게 입장해 주세요! 🙏`
+        },
       },
     } as const
 
     const body: SendRequest = await req.json()
-    const { to, type, customerName = '고객', points, message, queueNumber, storeName = '' } = body
+    const {
+      to,
+      type,
+      customerName = '고객',
+      points,
+      message,
+      queueNumber,
+      storeName = '',
+      teamsAhead = 0,
+      estimatedWaitMinutes = 0,
+    } = body
 
     if (!to) {
       return new Response(
@@ -153,10 +208,12 @@ serve(async (req: Request) => {
         KAKAO_CHANNEL_ID,
         config.templateId,
         {
-          '#{대기번호}': String(queueNumber ?? ''),
           '#{매장명}': storeName,
+          '#{대기번호}': String(queueNumber ?? ''),
+          '#{앞팀수}': String(teamsAhead),
+          '#{예상시간}': String(estimatedWaitMinutes),
         },
-        config.fallback(queueNumber, storeName),
+        config.fallback(queueNumber, storeName, teamsAhead, estimatedWaitMinutes),
       )
     } else if (type === 'WAITING_CALLED') {
       const config = WAITING_MESSAGE_CONFIG.WAITING_CALLED
@@ -165,10 +222,12 @@ serve(async (req: Request) => {
         KAKAO_CHANNEL_ID,
         config.templateId,
         {
-          '#{대기번호}': String(queueNumber ?? ''),
           '#{매장명}': storeName,
+          '#{대기번호}': String(queueNumber ?? ''),
+          '#{앞팀수}': String(teamsAhead),
+          '#{예상시간}': String(estimatedWaitMinutes),
         },
-        config.fallback(queueNumber, storeName),
+        config.fallback(queueNumber, storeName, teamsAhead, estimatedWaitMinutes),
       )
     } else if (type === 'PROMOTION') {
       // PROMOTION: 친구톡 (템플릿 심사 불필요)
