@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
-import { Building2, Plus, Pencil, LogOut, Utensils, RefreshCw, Copy, KeyRound, Users, Info, CreditCard, UtensilsCrossed } from 'lucide-react'
+import { Building2, Plus, Pencil, LogOut, Utensils, RefreshCw, Copy, KeyRound, Users, Info, CreditCard, UtensilsCrossed, Search } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/app/components/ui/tabs'
 import { Button } from '@/app/components/ui/button'
 import { Input } from '@/app/components/ui/input'
@@ -29,7 +29,6 @@ import type { StoreRow, MenuCategoryRow, MenuItemRow } from '@/types/database'
 import { getKstDateString } from '@/lib/utils/subscription'
 
 
-const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const PASSWORD_MIN_LENGTH = 8
 const PASSWORD_REGEX = /^(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]).{8,}$/
 
@@ -53,14 +52,6 @@ function generateTempPassword(): string {
   const special = specials[randomIndex(specials.length)]
   const insertAt = randomIndex(password.length + 1)
   return password.slice(0, insertAt) + special + password.slice(insertAt)
-}
-
-function normalizeSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
 }
 
 function getStoreStatus(store: StoreRow): 'active' | 'expired' | 'inactive' {
@@ -718,10 +709,22 @@ interface StoreListTabProps {
 }
 
 function StoreListTab({ stores, loading, onEdit, onMenuView, onAddClick }: StoreListTabProps) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const filteredStores = useMemo(() => {
+    if (!normalizedSearchQuery) return stores
+    return stores.filter((store) => store.name.toLowerCase().includes(normalizedSearchQuery))
+  }, [stores, normalizedSearchQuery])
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-zinc-900">전체 매장 ({stores.length})</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-zinc-900">전체 매장 ({stores.length})</h2>
+          {normalizedSearchQuery && (
+            <p className="text-xs text-zinc-500 mt-0.5">검색 결과 {filteredStores.length}개</p>
+          )}
+        </div>
         <Button
           size="sm"
           className="bg-orange-500 hover:bg-orange-600 text-white gap-1.5"
@@ -732,6 +735,16 @@ function StoreListTab({ stores, loading, onEdit, onMenuView, onAddClick }: Store
         </Button>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="매장명 검색"
+          className="pl-9"
+        />
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-12">
           <div className="w-7 h-7 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -740,6 +753,11 @@ function StoreListTab({ stores, loading, onEdit, onMenuView, onAddClick }: Store
         <div className="flex flex-col items-center justify-center py-16 text-zinc-400 gap-2">
           <Building2 className="w-10 h-10 opacity-40" />
           <p className="text-sm">등록된 매장이 없습니다.</p>
+        </div>
+      ) : filteredStores.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-zinc-400 gap-2">
+          <Search className="w-10 h-10 opacity-40" />
+          <p className="text-sm">검색 결과가 없습니다.</p>
         </div>
       ) : (
         <div className="rounded-xl border border-zinc-200 overflow-hidden">
@@ -754,7 +772,7 @@ function StoreListTab({ stores, loading, onEdit, onMenuView, onAddClick }: Store
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stores.map((store) => {
+              {filteredStores.map((store) => {
                 const status = getStoreStatus(store)
                 return (
                   <TableRow key={store.id} className="hover:bg-zinc-50/60">
@@ -823,7 +841,6 @@ interface AddStoreTabProps {
 
 interface AddStoreForm {
   name: string
-  slug: string
   address: string
   phone: string
   subscriptionStart: string
@@ -835,7 +852,6 @@ interface AddStoreForm {
 function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
   const [form, setForm] = useState<AddStoreForm>(() => ({
     name: '',
-    slug: '',
     address: '',
     phone: '',
     subscriptionStart: '',
@@ -851,7 +867,7 @@ function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const slug = form.slug.trim() || generateSlug()
+    const slug = generateSlug()
 
     if (!form.name) {
       toast.error('매장명은 필수입니다.')
@@ -892,7 +908,7 @@ function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
 
       toast.success(`'${form.name}' 매장이 생성되었습니다.`)
       setForm({
-        name: '', slug: '', address: '', phone: '',
+        name: '', address: '', phone: '',
         subscriptionStart: '', subscriptionEnd: '',
         ownerEmail: '', ownerPassword: generateTempPassword(),
       })
@@ -921,15 +937,6 @@ function AddStoreTab({ onCreated, onTabChange }: AddStoreTabProps) {
               onChange={(e) => handleChange('name', e.target.value)}
               required
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-zinc-600">슬러그 (URL 식별자)</label>
-            <Input
-              placeholder="예) tasty-restaurant"
-              value={form.slug}
-              onChange={(e) => handleChange('slug', e.target.value)}
-            />
-            <p className="text-xs text-zinc-400">비워두면 자동 생성됩니다</p>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-zinc-600">주소</label>

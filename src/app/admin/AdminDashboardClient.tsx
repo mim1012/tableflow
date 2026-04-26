@@ -514,35 +514,33 @@ export default function AdminDashboardClient() {
   }
 
   const handleAddTable = async () => {
-    try {
-      await addTableAction(storeId)
-      await refetchTables()
-      toast.success('테이블이 추가되었습니다.')
-    } catch (err: unknown) {
-      const e = err as { message?: string; code?: string; details?: string }
-      console.error('테이블 추가 실패:', e)
-      toast.error(`테이블 추가 실패: ${e?.message ?? '알 수 없는 오류'}`)
+    const result = await addTableAction(storeId)
+    if (!result.success) {
+      toast.error(`테이블 추가 실패: ${result.error}`)
+      return
     }
+    await refetchTables()
+    toast.success('테이블이 추가되었습니다.')
   }
 
   const handleRenameTable = async (realId: string, name: string) => {
-    try {
-      await renameTableAction(realId, name)
-      await refetchTables()
-      toast.success('테이블 이름이 변경되었습니다.')
-    } catch (err) {
-      toast.error(`이름 변경 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`)
+    const result = await renameTableAction(realId, name)
+    if (!result.success) {
+      toast.error(`이름 변경 실패: ${result.error}`)
+      return
     }
+    await refetchTables()
+    toast.success('테이블 이름이 변경되었습니다.')
   }
 
   const handleDeleteTable = async (realId: string) => {
-    try {
-      await deleteTableAction(realId)
-      await refetchTables()
-      toast.success('테이블이 삭제되었습니다.')
-    } catch (err) {
-      toast.error(`삭제 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`)
+    const result = await deleteTableAction(realId)
+    if (!result.success) {
+      toast.error(`삭제 실패: ${result.error}`)
+      return
     }
+    await refetchTables()
+    toast.success('테이블이 삭제되었습니다.')
   }
 
   // --- Settings state ---
@@ -1077,6 +1075,7 @@ export default function AdminDashboardClient() {
             {activeTab === 'customers' && (
               <motion.div key="customers" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <CustomersPanel
+                  storeId={storeId}
                   customers={customers}
                   onEditCustomer={(c) => { setEditingCustomer(c); setIsCustomerEditModalOpen(true) }}
                   onAddCustomer={handleAddCustomer}
