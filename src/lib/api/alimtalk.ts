@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/client'
 
 export interface AlimtalkPayload {
+  storeId?: string
+  customerId?: string
   to: string
   type: 'POINT_GRANTED' | 'PROMOTION' | 'WAITING_CREATED' | 'WAITING_CALLED'
   customerName?: string
@@ -18,7 +20,8 @@ export async function sendAlimtalk(payload: AlimtalkPayload): Promise<void> {
 }
 
 export async function broadcastPromotion(
-  customers: { phone: string | null; name: string }[],
+  storeId: string,
+  customers: { id: string; phone: string | null; name: string }[],
   message: string,
 ): Promise<{ sent: number; failed: number }> {
   const targets = customers.filter((c) => c.phone?.trim())
@@ -26,6 +29,8 @@ export async function broadcastPromotion(
   const results = await Promise.allSettled(
     targets.map((customer) =>
       sendAlimtalk({
+        storeId,
+        customerId: customer.id,
         to: customer.phone!.trim(),
         type: 'PROMOTION',
         customerName: customer.name,

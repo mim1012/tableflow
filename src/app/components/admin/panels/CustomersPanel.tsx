@@ -17,6 +17,7 @@ export interface Customer {
 }
 
 interface CustomersPanelProps {
+  storeId: string;
   customers: Customer[];
   onEditCustomer: (customer: Customer) => void;
   onAddCustomer: (name: string, phone: string) => Promise<void>;
@@ -26,6 +27,7 @@ interface CustomersPanelProps {
 }
 
 export default function CustomersPanel({
+  storeId,
   customers,
   onEditCustomer,
   onAddCustomer,
@@ -50,7 +52,8 @@ export default function CustomersPanel({
     try {
       const { broadcastPromotion } = await import('@/lib/api/alimtalk');
       const { sent, failed } = await broadcastPromotion(
-        kakaoFriends.map((c) => ({ phone: c.phone ?? null, name: c.name })),
+        storeId,
+        kakaoFriends.map((c) => ({ id: c.id, phone: c.phone ?? null, name: c.name })),
         broadcastMsg.trim(),
       );
       setBroadcastMsg('');
