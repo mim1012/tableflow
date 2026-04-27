@@ -44,7 +44,7 @@ export async function getWaitingStatus(
   waitingId: string,
 ): Promise<{ myPosition: number; totalWaiting: number }> {
   const { data: allWaiting, error } = await supabase
-    .from('waitings')
+    .from('waitings_public')
     .select('id, queue_number')
     .eq('store_id', storeId)
     .eq('status', 'waiting')

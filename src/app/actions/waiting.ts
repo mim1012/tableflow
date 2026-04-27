@@ -6,7 +6,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Supabase 환경 변수가 누락되었습니다.')
+  if (!url || !key) return null
   return createServiceClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${key}` } },
@@ -86,19 +86,25 @@ async function getWaitingNotificationContext(
 }
 
 async function notifyWaitingAlimtalk(
-  sb: any,
+  sb: any | null,
   waiting: { phone: string; queueNumber: number; storeId: string },
   type: 'WAITING_CREATED' | 'WAITING_CALLED',
 ) {
-  const { storeName, teamsAhead, estimatedWaitMinutes } = await getWaitingNotificationContext(sb, waiting)
-  void sendWaitingAlimtalk(sb, {
-    to: waiting.phone,
-    type,
-    queueNumber: waiting.queueNumber,
-    storeName,
-    teamsAhead,
-    estimatedWaitMinutes,
-  })
+  if (!sb) return
+
+  try {
+    const { storeName, teamsAhead, estimatedWaitMinutes } = await getWaitingNotificationContext(sb, waiting)
+    void sendWaitingAlimtalk(sb, {
+      to: waiting.phone,
+      type,
+      queueNumber: waiting.queueNumber,
+      storeName,
+      teamsAhead,
+      estimatedWaitMinutes,
+    })
+  } catch {
+    // 알림톡 컨텍스트 조회 실패가 대기 등록/호출 자체를 막지 않음
+  }
 }
 
 export async function createWaitingAction(
@@ -106,8 +112,9 @@ export async function createWaitingAction(
   phone: string,
   partySize: number,
 ): Promise<{ queueNumber: number; waitingId: string }> {
-  // 공개 페이지에서 호출되므로 service_role로 RLS 우회
-  const sb = getServiceClient()
+  const supabase = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
 
   const { data: queueNumber, error: rpcError } = await sb.rpc('next_queue_number', {
     p_store_id: storeId,
@@ -129,7 +136,7 @@ export async function createWaitingAction(
   if (error) throw new Error(error.message)
 
   void notifyWaitingAlimtalk(
-    sb,
+    getServiceClient(),
     { phone, queueNumber: queueNumber as number, storeId },
     'WAITING_CREATED',
   )

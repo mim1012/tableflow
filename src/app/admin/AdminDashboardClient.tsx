@@ -328,24 +328,36 @@ export default function AdminDashboardClient() {
     setIsTableModalOpen(true)
   }
 
-  const markTableAvailable = (id: number) => {
+  const markTableAvailable = async (id: number) => {
     const realId = findRealTableId(id)
-    if (realId) apiUpdateTableStatus(realId, 'available')
+    if (!realId) return
+
+    const ok = await apiUpdateTableStatus(realId, 'available')
+    if (!ok) return
+
     setTableOverrides((prev) => new Map(prev).set(id, { status: 'available', amount: 0, time: '', pax: 0 }))
     toast.info(`${id}번 테이블 정리가 완료되었습니다.`)
   }
 
-  const handleCheckoutTable = (id: number) => {
+  const handleCheckoutTable = async (id: number) => {
     const realId = findRealTableId(id)
-    if (realId) apiUpdateTableStatus(realId, 'cleaning')
+    if (!realId) return
+
+    const ok = await apiUpdateTableStatus(realId, 'cleaning')
+    if (!ok) return
+
     setTableOverrides((prev) => new Map(prev).set(id, { status: 'cleaning', amount: 0, time: '', pax: 0 }))
     toast.success(`${id}번 테이블 정산이 완료되었습니다. 정리 대기 중입니다.`)
     setIsTableModalOpen(false)
   }
 
-  const cancelTableOrder = (id: number) => {
+  const cancelTableOrder = async (id: number) => {
     const realId = findRealTableId(id)
-    if (realId) apiUpdateTableStatus(realId, 'available')
+    if (!realId) return
+
+    const ok = await apiUpdateTableStatus(realId, 'available')
+    if (!ok) return
+
     setTableOverrides((prev) => new Map(prev).set(id, { status: 'available', amount: 0, time: '', pax: 0 }))
     toast.success(`${id}번 테이블 주문이 전체 취소되었습니다.`)
     setIsTableModalOpen(false)
@@ -379,9 +391,13 @@ export default function AdminDashboardClient() {
     toast.success('메뉴가 취소되었습니다.')
   }
 
-  const markTableOccupied = (id: number) => {
+  const markTableOccupied = async (id: number) => {
     const realId = findRealTableId(id)
-    if (realId) apiUpdateTableStatus(realId, 'occupied')
+    if (!realId) return
+
+    const ok = await apiUpdateTableStatus(realId, 'occupied')
+    if (!ok) return
+
     setTableOverrides((prev) => new Map(prev).set(id, { status: 'occupied', amount: 0, time: '방금 전', pax: 2 }))
     toast.success(`${id}번 테이블 착석 처리되었습니다.`)
     setIsTableModalOpen(false)
@@ -484,7 +500,10 @@ export default function AdminDashboardClient() {
     setIsPlacingOrder(true)
     try {
       await createOrder({ storeId, tableId: tableRealId, items: orderItems })
-      await apiUpdateTableStatus(tableRealId, 'occupied')
+      const tableStatusUpdated = await apiUpdateTableStatus(tableRealId, 'occupied')
+      if (!tableStatusUpdated) {
+        throw new Error('table status update failed')
+      }
       setTableOverrides((prev) => {
         const existing = prev.get(orderTableId!) ?? {}
         const currentTable = tables.find((t) => t.id === orderTableId)

@@ -63,6 +63,7 @@ beforeEach(() => {
   } as any)
 
   vi.mocked(createServerClient).mockResolvedValue({
+    rpc: serviceRpcMock,
     from: serverFromMock,
     functions: { invoke: functionsInvokeMock },
   } as any)
@@ -71,10 +72,11 @@ beforeEach(() => {
 describe('createWaitingAction', () => {
   it('creates waiting and sends WAITING_CREATED alimtalk with live queue mapping', async () => {
     serviceRpcMock.mockResolvedValue({ data: 7, error: null })
-    serviceFromMock
+    serverFromMock
       .mockReturnValueOnce(
         makeInsertChain({ data: { id: 'waiting-1' }, error: null }) as any,
       )
+    serviceFromMock
       .mockReturnValueOnce(
         makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
       )
@@ -92,7 +94,7 @@ describe('createWaitingAction', () => {
     })
 
     expect(serviceRpcMock).toHaveBeenCalledWith('next_queue_number', { p_store_id: 'store-1' })
-    expect(serviceFromMock).toHaveBeenCalledWith('waitings')
+    expect(serverFromMock).toHaveBeenCalledWith('waitings')
     expect(functionsInvokeMock).toHaveBeenCalledWith('send-alimtalk', {
       body: {
         to: '01012345678',
@@ -103,6 +105,21 @@ describe('createWaitingAction', () => {
         estimatedWaitMinutes: 28,
       },
     })
+  })
+
+  it('still creates waiting when service role env is missing', async () => {
+    serviceRpcMock.mockResolvedValue({ data: 9, error: null })
+    serverFromMock.mockReturnValueOnce(
+      makeInsertChain({ data: { id: 'waiting-2' }, error: null }) as any,
+    )
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    await expect(createWaitingAction('store-1', '01055556666', 2)).resolves.toEqual({
+      queueNumber: 9,
+      waitingId: 'waiting-2',
+    })
+
+    expect(functionsInvokeMock).not.toHaveBeenCalled()
   })
 })
 

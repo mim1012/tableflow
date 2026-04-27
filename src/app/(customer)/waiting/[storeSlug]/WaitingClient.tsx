@@ -15,7 +15,7 @@ async function getWaitingStatus(storeId: string, waitingId: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = createClient() as any
   const { data, error } = await supabase
-    .from('waitings')
+    .from('waitings_public')
     .select('id, queue_number')
     .eq('store_id', storeId)
     .eq('status', 'waiting')

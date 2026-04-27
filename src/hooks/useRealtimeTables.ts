@@ -76,9 +76,11 @@ export function useRealtimeTables(storeId: string | null) {
       setTables((prev) =>
         prev.map((t) => (t.id === tableId ? { ...t, status } : t))
       )
+      return true
     } catch (err) {
       console.error('useRealtimeTables updateTableStatus:', err)
       toast.error('테이블 상태 변경에 실패했습니다.')
+      return false
     }
   }, [])
 
