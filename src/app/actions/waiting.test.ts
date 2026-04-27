@@ -107,6 +107,35 @@ describe('createWaitingAction', () => {
     })
   })
 
+  it('falls back to service role client when anon insert fails', async () => {
+    serviceRpcMock.mockResolvedValue({ data: 11, error: null })
+    serverFromMock.mockReturnValueOnce(
+      makeInsertChain({ data: null, error: { message: 'new row violates row-level security policy for table "waitings"' } }) as any,
+    )
+    serviceFromMock
+      .mockReturnValueOnce(
+        makeInsertChain({ data: { id: 'waiting-service' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 7 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: [], error: null }) as any,
+      )
+    functionsInvokeMock.mockResolvedValue({ data: { ok: true }, error: null })
+
+    await expect(createWaitingAction('store-1', '01077778888', 2)).resolves.toEqual({
+      queueNumber: 11,
+      waitingId: 'waiting-service',
+    })
+
+    expect(serverFromMock).toHaveBeenCalledWith('waitings')
+    expect(serviceFromMock).toHaveBeenCalledWith('waitings')
+  })
+
   it('still creates waiting when service role env is missing', async () => {
     serviceRpcMock.mockResolvedValue({ data: 9, error: null })
     serverFromMock.mockReturnValueOnce(

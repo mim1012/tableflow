@@ -107,15 +107,12 @@ async function notifyWaitingAlimtalk(
   }
 }
 
-export async function createWaitingAction(
+async function createWaitingWithClient(
+  sb: any,
   storeId: string,
   phone: string,
   partySize: number,
 ): Promise<{ queueNumber: number; waitingId: string }> {
-  const supabase = await createClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sb = supabase as any
-
   const { data: queueNumber, error: rpcError } = await sb.rpc('next_queue_number', {
     p_store_id: storeId,
   })
@@ -135,13 +132,35 @@ export async function createWaitingAction(
 
   if (error) throw new Error(error.message)
 
+  return { queueNumber: queueNumber as number, waitingId: data.id as string }
+}
+
+export async function createWaitingAction(
+  storeId: string,
+  phone: string,
+  partySize: number,
+): Promise<{ queueNumber: number; waitingId: string }> {
+  const supabase = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const serviceClient = getServiceClient()
+
+  let result: { queueNumber: number; waitingId: string }
+
+  try {
+    result = await createWaitingWithClient(sb, storeId, phone, partySize)
+  } catch (error) {
+    if (!serviceClient) throw error
+    result = await createWaitingWithClient(serviceClient, storeId, phone, partySize)
+  }
+
   void notifyWaitingAlimtalk(
-    getServiceClient(),
-    { phone, queueNumber: queueNumber as number, storeId },
+    serviceClient,
+    { phone, queueNumber: result.queueNumber, storeId },
     'WAITING_CREATED',
   )
 
-  return { queueNumber: queueNumber as number, waitingId: data.id as string }
+  return result
 }
 
 export async function callWaitingAction(waitingId: string): Promise<void> {
