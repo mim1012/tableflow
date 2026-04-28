@@ -17,11 +17,9 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createWaitingAction, callWaitingAction } from './waiting'
 
-function makeInsertChain(result: { data: { id: string } | null; error: { message: string } | null }) {
-  const single = vi.fn().mockResolvedValue(result)
-  const select = vi.fn().mockReturnValue({ single })
-  const insert = vi.fn().mockReturnValue({ select })
-  return { insert, select, single }
+function makeInsertNoSelectChain(result: { error: { message: string } | null }) {
+  const insert = vi.fn().mockResolvedValue(result)
+  return { insert }
 }
 
 function makeSelectChain(result: { data: unknown; error: { message: string } | null }) {
@@ -52,6 +50,7 @@ beforeEach(() => {
   serviceFromMock.mockReset()
   serverFromMock.mockReset()
   functionsInvokeMock.mockReset()
+  vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111')
 
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co'
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key'
@@ -74,7 +73,7 @@ describe('createWaitingAction', () => {
     serviceRpcMock.mockResolvedValue({ data: 7, error: null })
     serverFromMock
       .mockReturnValueOnce(
-        makeInsertChain({ data: { id: 'waiting-1' }, error: null }) as any,
+        makeInsertNoSelectChain({ error: null }) as any,
       )
     serviceFromMock
       .mockReturnValueOnce(
@@ -90,7 +89,7 @@ describe('createWaitingAction', () => {
 
     await expect(createWaitingAction('store-1', '01012345678', 3)).resolves.toEqual({
       queueNumber: 7,
-      waitingId: 'waiting-1',
+      waitingId: '11111111-1111-4111-8111-111111111111',
     })
 
     expect(serviceRpcMock).toHaveBeenCalledWith('next_queue_number', { p_store_id: 'store-1' })
@@ -110,11 +109,11 @@ describe('createWaitingAction', () => {
   it('falls back to service role client when anon insert fails', async () => {
     serviceRpcMock.mockResolvedValue({ data: 11, error: null })
     serverFromMock.mockReturnValueOnce(
-      makeInsertChain({ data: null, error: { message: 'new row violates row-level security policy for table "waitings"' } }) as any,
+      makeInsertNoSelectChain({ error: { message: 'new row violates row-level security policy for table "waitings"' } }) as any,
     )
     serviceFromMock
       .mockReturnValueOnce(
-        makeInsertChain({ data: { id: 'waiting-service' }, error: null }) as any,
+        makeInsertNoSelectChain({ error: null }) as any,
       )
       .mockReturnValueOnce(
         makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
@@ -129,7 +128,7 @@ describe('createWaitingAction', () => {
 
     await expect(createWaitingAction('store-1', '01077778888', 2)).resolves.toEqual({
       queueNumber: 11,
-      waitingId: 'waiting-service',
+      waitingId: '11111111-1111-4111-8111-111111111111',
     })
 
     expect(serverFromMock).toHaveBeenCalledWith('waitings')
@@ -139,15 +138,31 @@ describe('createWaitingAction', () => {
   it('still creates waiting when service role env is missing', async () => {
     serviceRpcMock.mockResolvedValue({ data: 9, error: null })
     serverFromMock.mockReturnValueOnce(
-      makeInsertChain({ data: { id: 'waiting-2' }, error: null }) as any,
+      makeInsertNoSelectChain({ error: null }) as any,
     )
     delete process.env.SUPABASE_SERVICE_ROLE_KEY
 
     await expect(createWaitingAction('store-1', '01055556666', 2)).resolves.toEqual({
       queueNumber: 9,
-      waitingId: 'waiting-2',
+      waitingId: '11111111-1111-4111-8111-111111111111',
     })
 
+    expect(functionsInvokeMock).not.toHaveBeenCalled()
+  })
+
+  it('creates waiting without service-role fallback when anon insert works but returning is blocked by RLS', async () => {
+    serviceRpcMock.mockResolvedValue({ data: 13, error: null })
+    serverFromMock.mockReturnValueOnce(
+      makeInsertNoSelectChain({ error: null }) as any,
+    )
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    const result = await createWaitingAction('store-1', '01022223333', 4)
+
+    expect(result.queueNumber).toBe(13)
+    expect(result.waitingId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    )
     expect(functionsInvokeMock).not.toHaveBeenCalled()
   })
 })

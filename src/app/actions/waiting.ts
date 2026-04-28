@@ -118,21 +118,21 @@ async function createWaitingWithClient(
   })
   if (rpcError) throw new Error(rpcError.message)
 
-  const { data, error } = await sb
+  const waitingId = crypto.randomUUID()
+  const { error } = await sb
     .from('waitings')
     .insert({
+      id: waitingId,
       store_id: storeId,
       queue_number: queueNumber as number,
       phone,
       party_size: partySize,
       status: 'waiting',
     })
-    .select('id')
-    .single()
 
   if (error) throw new Error(error.message)
 
-  return { queueNumber: queueNumber as number, waitingId: data.id as string }
+  return { queueNumber: queueNumber as number, waitingId }
 }
 
 export async function createWaitingAction(
