@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import type { StoreRow, TableRow, MenuCategoryRow, SelectedOption } from '@/types/database'
+import { getSafeMenuImageSrc } from '../../../ui-helpers'
 
 export interface MenuItemOption {
   name: string
@@ -77,9 +78,10 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showSplash, setShowSplash] = useState(true)
   const [showOrderConfirm, setShowOrderConfirm] = useState(false)
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({})
 
   React.useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2500)
+    const timer = setTimeout(() => setShowSplash(false), 1200)
     return () => clearTimeout(timer)
   }, [])
 
@@ -116,6 +118,36 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
 
   const totalItems = cart.reduce((a, b) => a + b.qty, 0)
   const totalPrice = cart.reduce((total, item) => total + item.price * item.qty, 0)
+
+  const handleImageError = (itemId: string) => {
+    setImageErrors((prev) => prev[itemId] ? prev : { ...prev, [itemId]: true })
+  }
+
+  const renderMenuImage = (item: Pick<MenuItem, 'id' | 'name' | 'image'>, className: string) => {
+    const imageSrc = getSafeMenuImageSrc(item.image)
+
+    if (!imageSrc || imageErrors[item.id]) {
+      return (
+        <div className={`${className} bg-gradient-to-br from-zinc-200 via-zinc-100 to-white flex items-center justify-center text-zinc-500`}>
+          <div className="text-center">
+            <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-lg font-black text-zinc-700 shadow-sm">
+              {item.name.slice(0, 1)}
+            </div>
+            <p className="px-3 text-[11px] font-semibold text-zinc-500">이미지 준비중</p>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <img
+        src={imageSrc}
+        alt={item.name}
+        className={className}
+        onError={() => handleImageError(item.id)}
+      />
+    )
+  }
 
   const openItemDetail = (item: MenuItem) => {
     setSelectedItem(item)
@@ -275,7 +307,7 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.5, type: 'spring' }}
-                className="w-48 h-48 sm:w-56 sm:h-56 relative mb-12"
+                className="w-36 h-36 sm:w-44 sm:h-44 relative mb-8"
               >
                 <div className="absolute top-0 left-0 w-10 h-10 border-t-4 border-l-4 border-orange-500 rounded-tl-2xl" />
                 <div className="absolute top-0 right-0 w-10 h-10 border-t-4 border-r-4 border-orange-500 rounded-tr-2xl" />
@@ -293,15 +325,15 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
                 <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 1, type: 'spring' }} className="bg-orange-500/20 text-orange-400 font-bold px-6 py-2.5 rounded-full text-sm inline-flex items-center gap-2 mb-6 border border-orange-500/30 shadow-[0_0_15px_rgba(249,115,22,0.2)]">
                   <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" /> {tableDisplayName} 인식 완료
                 </motion.div>
-                <h2 className="text-3xl font-black mb-3 tracking-tight">메뉴판을 준비하고 있어요</h2>
-                <p className="text-zinc-400 text-sm font-medium">잠시만 기다려주세요...</p>
+                <h2 className="text-2xl font-black mb-2 tracking-tight">메뉴를 불러오고 있어요</h2>
+                <p className="text-zinc-400 text-sm font-medium">곧 바로 주문할 수 있어요.</p>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
 
         {/* Cover Image & Header */}
-        <div className="relative h-[240px] bg-zinc-900 overflow-hidden shrink-0">
+        <div className="relative h-[188px] bg-zinc-900 overflow-hidden shrink-0">
           <img src="https://images.unsplash.com/photo-1554118811-1e0d58224f24?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080" alt="Cafe Cover" className="w-full h-full object-cover opacity-60" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-black/50" />
 
@@ -325,64 +357,94 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
             </div>
           </div>
 
-          <div className="absolute bottom-6 left-6 z-10">
-            <p className="text-white/80 text-sm font-bold mb-1.5 drop-shadow-md">환영합니다! 지금 계신 곳은</p>
-            <h1 className="text-4xl font-black text-white flex items-end gap-2 drop-shadow-lg tracking-tight">{tableDisplayName} <span className="text-lg font-bold text-white/80 mb-1.5 tracking-normal">입니다</span></h1>
+          <div className="absolute bottom-5 left-5 right-5 z-10">
+            <p className="text-white/70 text-[11px] font-bold mb-1.5 uppercase tracking-[0.22em] drop-shadow-md">{store.name}</p>
+            <h1 className="text-3xl font-black text-white drop-shadow-lg tracking-tight">{tableDisplayName}</h1>
+            <p className="mt-2 text-sm font-medium text-white/80">원하는 메뉴를 고르고 바로 주문해 보세요.</p>
           </div>
-        </div>
-
-        {/* Event Banner */}
-        <div className="px-4 py-3 bg-zinc-50 z-10 relative">
-          <button onClick={() => setIsEventOpen(true)} className="w-full bg-gradient-to-r from-zinc-900 to-zinc-800 rounded-2xl p-4 flex items-center justify-between shadow-[0_8px_30px_rgb(0,0,0,0.12)] text-white transform transition active:scale-[0.98]">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center shrink-0 shadow-inner"><Gift className="w-5 h-5 text-white" /></div>
-              <div className="text-left">
-                <h4 className="font-extrabold text-sm leading-tight text-orange-400 mb-0.5">네이버 영수증 리뷰 이벤트 🎉</h4>
-                <p className="text-[11px] text-zinc-300 font-medium">참여하고 아메리카노 1잔 무료로 받기!</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-zinc-500 shrink-0" />
-          </button>
         </div>
 
         {/* Categories & Menu List */}
-        <div className="flex-1 flex overflow-hidden bg-zinc-50">
-          {/* Left Vertical Categories */}
-          <div className="w-[84px] sm:w-[96px] bg-white border-r border-zinc-200 overflow-y-auto no-scrollbar shrink-0 flex flex-col z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
-            {categoryTabs.map((cat) => {
-              const isActive = activeCategory === cat.id
-              const Icon = cat.icon
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`flex flex-col items-center justify-center py-6 px-2 gap-2 border-b border-zinc-50 transition-all ${isActive ? 'bg-zinc-50 relative' : 'bg-white hover:bg-zinc-50/50'}`}
-                >
-                  {isActive && <motion.div layoutId="activeCat" className="absolute left-0 top-0 bottom-0 w-1.5 bg-orange-500 rounded-r-full" />}
-                  <Icon className={`w-6 h-6 transition-colors ${isActive ? 'text-orange-500' : 'text-zinc-400'}`} />
-                  <span className={`text-xs sm:text-sm transition-all ${isActive ? 'text-zinc-900 font-extrabold' : 'text-zinc-500 font-medium'}`}>{cat.id}</span>
-                </button>
-              )
-            })}
+        <div className="flex-1 flex flex-col overflow-hidden bg-zinc-50">
+          <div className="sticky top-0 z-20 border-b border-zinc-100 bg-white/95 backdrop-blur">
+            <div className="flex gap-2 overflow-x-auto px-4 py-3 no-scrollbar">
+              {categoryTabs.map((cat) => {
+                const isActive = activeCategory === cat.id
+                const Icon = cat.icon
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-bold transition-all ${
+                      isActive
+                        ? 'border-orange-500 bg-orange-50 text-orange-600 shadow-sm'
+                        : 'border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 hover:text-zinc-800'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span>{cat.id}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          {/* Menu List */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32 relative scroll-smooth">
+          <div className="px-4 pt-3">
+            <button
+              onClick={() => setIsEventOpen(true)}
+              className="w-full rounded-2xl border border-orange-100 bg-orange-50/80 px-4 py-3 text-left text-zinc-800 transition active:scale-[0.99]"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-orange-500 shadow-sm">
+                    <Gift className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-orange-500">이벤트</p>
+                    <h4 className="text-sm font-extrabold leading-tight">영수증 리뷰 참여하고 아메리카노 받기</h4>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />
+              </div>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 pt-4 space-y-4 pb-32 relative scroll-smooth">
+            {activeCategory === '전체' && (
+              <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-400">주문 시작</p>
+                <p className="mt-1 text-sm font-medium text-zinc-600">메뉴를 눌러 옵션을 고르고 바로 장바구니에 담아보세요.</p>
+              </div>
+            )}
             <AnimatePresence mode="popLayout">
               {filteredItems.map((item) => (
-                <motion.div data-testid="menu-card" key={item.id} layout initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, scale: 0.95 }} onClick={() => openItemDetail(item)} className="bg-white rounded-[24px] p-3 sm:p-4 shadow-[0_2px_12px_rgb(0,0,0,0.03)] border border-zinc-100 flex gap-4 relative cursor-pointer hover:border-orange-200 transition-all active:scale-[0.98]">
+                <motion.div
+                  data-testid="menu-card"
+                  key={item.id}
+                  layout
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  onClick={() => openItemDetail(item)}
+                  className="bg-white rounded-[24px] p-3 sm:p-4 shadow-[0_2px_12px_rgb(0,0,0,0.03)] border border-zinc-100 flex gap-4 relative cursor-pointer hover:border-orange-200 transition-all active:scale-[0.98]"
+                >
                   <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-[18px] overflow-hidden shrink-0 relative bg-zinc-100 shadow-sm">
-                    <img src={item.image} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 hover:scale-110" />
-                    {item.badge && <div className={`absolute top-2 left-2 px-2.5 py-1 text-[10px] font-black rounded-lg text-white shadow-sm ${item.badge === 'BEST' ? 'bg-red-500' : item.badge === 'NEW' ? 'bg-blue-500' : 'bg-orange-500'}`}>{item.badge}</div>}
+                    {renderMenuImage(item, 'h-full w-full object-cover transition-transform duration-500 hover:scale-110')}
+                    {item.badge && <div className={`absolute top-2 left-2 px-2.5 py-1 text-[10px] font-black rounded-full text-white shadow-sm ${item.badge === 'BEST' ? 'bg-red-500' : item.badge === 'NEW' ? 'bg-blue-500' : 'bg-orange-500'}`}>{item.badge}</div>}
                   </div>
                   <div className="flex-1 flex flex-col justify-between py-0.5 pr-1">
                     <div>
-                      <h3 className="font-extrabold text-zinc-900 text-sm sm:text-base leading-snug break-keep">{item.name}</h3>
-                      <p className="text-[11px] sm:text-xs text-zinc-500 mt-1.5 leading-relaxed line-clamp-2">{item.desc}</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-extrabold text-zinc-900 text-sm sm:text-base leading-snug break-keep">{item.name}</h3>
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-bold text-zinc-500">{item.category}</span>
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-zinc-500 mt-1.5 leading-relaxed line-clamp-2">{item.desc || '메뉴 설명을 준비하고 있어요.'}</p>
                     </div>
                     <div className="flex items-center justify-between mt-3">
                       <span className="font-black text-zinc-900 text-base tracking-tight">₩{item.price.toLocaleString()}</span>
-                      <button className="w-8 h-8 flex items-center justify-center bg-zinc-100 text-zinc-600 rounded-full hover:bg-orange-50 hover:text-orange-500 transition-colors"><Plus className="w-4 h-4" /></button>
+                      <button className="h-9 rounded-full bg-zinc-100 px-3 text-sm font-bold text-zinc-700 hover:bg-orange-50 hover:text-orange-500 transition-colors flex items-center gap-1.5">
+                        <Plus className="w-4 h-4" /> 담기
+                      </button>
                     </div>
                   </div>
                 </motion.div>
@@ -402,12 +464,12 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
                     <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-xs font-extrabold w-6 h-6 flex items-center justify-center rounded-full border-2 border-zinc-900 shadow-sm animate-bounce">{totalItems}</span>
                   </div>
                   <div className="text-left">
-                    <p className="text-zinc-400 text-xs font-bold">총 주문예상금액</p>
+                    <p className="text-zinc-400 text-xs font-bold">{totalItems}개 메뉴 · 총 예상금액</p>
                     <p className="font-black text-lg tracking-tight">₩{totalPrice.toLocaleString()}</p>
                   </div>
                 </div>
                 <div className="bg-white text-zinc-900 px-5 py-2.5 rounded-xl font-bold text-sm shadow-sm flex items-center gap-1.5">
-                  주문 확인 <ChevronRight className="w-4 h-4" />
+                  장바구니 보기 <ChevronRight className="w-4 h-4" />
                 </div>
               </button>
             </motion.div>
@@ -421,7 +483,7 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedItem(null)} className="absolute inset-0 bg-black/60 z-40 backdrop-blur-sm" />
               <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[32px] z-50 flex flex-col shadow-2xl max-h-[90vh] overflow-hidden">
                 <div className="relative h-72 shrink-0 bg-zinc-100">
-                  <img src={selectedItem.image} alt={selectedItem.name} className="w-full h-full object-cover" />
+                  {renderMenuImage(selectedItem, 'h-full w-full object-cover')}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
                   <button onClick={() => setSelectedItem(null)} className="absolute top-4 right-4 p-2.5 bg-black/20 backdrop-blur-md rounded-full text-white hover:bg-black/40 transition border border-white/10"><X className="w-5 h-5" /></button>
                   <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
@@ -513,7 +575,7 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
                   {cart.map((item) => (
                     <div key={item.cartId} className="flex justify-between items-start bg-white p-4 rounded-2xl border border-zinc-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)]">
                       <div className="flex gap-4">
-                        <img src={item.image} alt={item.name} className="w-20 h-20 rounded-xl object-cover bg-zinc-100" />
+                        {renderMenuImage(item, "w-20 h-20 rounded-xl object-cover bg-zinc-100")}
                         <div className="py-1">
                           <h4 className="font-bold text-zinc-900 text-base mb-1">{item.name}</h4>
                           {item.options.length > 0 && (
