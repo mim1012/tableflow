@@ -499,12 +499,11 @@ test.describe('엣지 케이스 E2E (SC-033, SC-038)', () => {
     }
   })
 
-  test('SC-037: 대기번호 race condition — 동시 호출 시 순차 번호 반환', async ({ page }) => {
+  test('SC-037: 대기 등록 race condition — atomic RPC 동시 호출 시 중복 없이 생성', async ({ page }) => {
     expect(storeId, '이전 테스트에서 storeId가 설정되어야 합니다.').toBeTruthy()
 
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
 
-    // next_queue_number RPC를 동시에 2번 호출
     const results = await page.evaluate(async (sid: string) => {
       const hdrs = (
         window as unknown as { __supabaseHeaders?: Record<string, string> }
@@ -512,39 +511,42 @@ test.describe('엣지 케이스 E2E (SC-033, SC-038)', () => {
       if (!hdrs) return null
       const baseUrl = hdrs['x-supabase-url'] ?? ''
       const apiKey = hdrs['apikey'] ?? ''
-      const rpcUrl = `${baseUrl}/rest/v1/rpc/next_queue_number`
-      const opts = {
+      const rpcUrl = `${baseUrl}/rest/v1/rpc/create_waiting_atomic`
+      const makeOpts = (phone: string) => ({
         method: 'POST',
         headers: {
           apikey: apiKey,
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ p_store_id: sid }),
-      }
-      const [r1, r2] = await Promise.all([fetch(rpcUrl, opts), fetch(rpcUrl, opts)])
-      const v1 = r1.ok ? ((await r1.json()) as number) : null
-      const v2 = r2.ok ? ((await r2.json()) as number) : null
+        body: JSON.stringify({ p_store_id: sid, p_phone: phone, p_party_size: 2 }),
+      })
+      const [r1, r2] = await Promise.all([
+        fetch(rpcUrl, makeOpts('01077770001')),
+        fetch(rpcUrl, makeOpts('01077770002')),
+      ])
+      const v1 = r1.ok ? ((await r1.json()) as { queue_number: number; waiting_id: string }) : null
+      const v2 = r2.ok ? ((await r2.json()) as { queue_number: number; waiting_id: string }) : null
       return [v1, v2]
     }, storeId)
 
     if (results === null) {
-      // __supabaseHeaders 미노출 환경 — 소프트 스킵
-      test.skip(true, 'window.__supabaseHeaders 미노출 환경 — next_queue_number RPC 검증 불가')
+      test.skip(true, 'window.__supabaseHeaders 미노출 환경 — create_waiting_atomic RPC 검증 불가')
       return
     }
 
-    const [num1, num2] = results
-    if (num1 === null || num2 === null) {
-      // RPC 미지원 또는 권한 없음 — 소프트 스킵
-      test.skip(true, 'next_queue_number RPC 미지원 또는 권한 없음 — 스킵')
+    const [row1, row2] = results
+    if (row1 === null || row2 === null) {
+      test.skip(true, 'create_waiting_atomic RPC 미지원 또는 권한 없음 — 스킵')
       return
     }
 
-    // 두 번호가 모두 숫자이고 서로 달라야 함 (순차 증가, 중복 없음)
-    expect(typeof num1).toBe('number')
-    expect(typeof num2).toBe('number')
-    expect(num1).not.toBe(num2)
+    expect(typeof row1.queue_number).toBe('number')
+    expect(typeof row2.queue_number).toBe('number')
+    expect(row1.waiting_id).toBeTruthy()
+    expect(row2.waiting_id).toBeTruthy()
+    expect(row1.queue_number).not.toBe(row2.queue_number)
+    expect(row1.waiting_id).not.toBe(row2.waiting_id)
   })
 
   test('SC-038: XSS — 메뉴명 특수문자 이스케이프 확인', async ({ page }) => {

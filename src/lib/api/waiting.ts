@@ -2,7 +2,27 @@ import { supabase as _supabase } from '@/lib/supabase'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const supabase = _supabase as any
-import type { WaitingRow, TableRow } from '@/types/database'
+import type { WaitingRow, TableRow, WaitingStatus } from '@/types/database'
+
+type WaitingCreationPayload = {
+  queue_number: number
+  waiting_id: string
+}
+
+function normalizeWaitingCreationPayload(payload: unknown): { queueNumber: number; waitingId: string } {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('waiting creation returned incomplete payload')
+  }
+
+  const queueNumber = (payload as WaitingCreationPayload).queue_number
+  const waitingId = (payload as WaitingCreationPayload).waiting_id
+
+  if (typeof queueNumber !== 'number' || !Number.isFinite(queueNumber) || typeof waitingId !== 'string' || waitingId.length === 0) {
+    throw new Error('waiting creation returned incomplete payload')
+  }
+
+  return { queueNumber, waitingId }
+}
 
 // -------------------------------------------------------
 // 대기 등록 (anon)
@@ -14,26 +34,13 @@ export async function createWaiting(params: {
 }): Promise<{ queueNumber: number; waitingId: string }> {
   const { storeId, phone, partySize } = params
 
-  const { data: queueNumber, error: rpcError } = await supabase.rpc(
-    'next_queue_number',
-    { p_store_id: storeId },
+  const { data, error } = await supabase.rpc(
+    'create_waiting_atomic',
+    { p_store_id: storeId, p_phone: phone, p_party_size: partySize },
   )
-  if (rpcError) throw new Error(rpcError.message)
-
-  const { data, error } = await supabase
-    .from('waitings')
-    .insert({
-      store_id: storeId,
-      queue_number: queueNumber as number,
-      phone,
-      party_size: partySize,
-      status: 'waiting',
-    })
-    .select('id')
-    .single()
-
   if (error) throw new Error(error.message)
-  return { queueNumber: queueNumber as number, waitingId: data.id }
+
+  return normalizeWaitingCreationPayload(data)
 }
 
 // -------------------------------------------------------
@@ -42,22 +49,48 @@ export async function createWaiting(params: {
 export async function getWaitingStatus(
   storeId: string,
   waitingId: string,
-): Promise<{ myPosition: number; totalWaiting: number }> {
-  const { data: allWaiting, error } = await supabase
+): Promise<{ myPosition: number; totalWaiting: number; status: WaitingStatus | null }> {
+  const { data: currentWaiting, error: currentError } = await supabase
     .from('waitings_public')
-    .select('id, queue_number')
+    .select('id, queue_number, status')
     .eq('store_id', storeId)
-    .eq('status', 'waiting')
-    .order('queue_number', { ascending: true })
+    .eq('id', waitingId)
+    .maybeSingle()
 
-  if (error) throw new Error(error.message)
+  if (currentError) throw new Error(currentError.message)
+  if (!currentWaiting) {
+    return { myPosition: 0, totalWaiting: 0, status: null }
+  }
 
-  const list = allWaiting ?? []
-  const totalWaiting = list.length
-  const myIndex = list.findIndex((w: any) => w.id === waitingId)
-  const myPosition = myIndex >= 0 ? myIndex : totalWaiting
+  const [{ count: totalWaitingCount, error: totalWaitingError }, { count: aheadCount, error: aheadError }] = await Promise.all([
+    supabase
+      .from('waitings_public')
+      .select('id', { count: 'exact', head: true })
+      .eq('store_id', storeId)
+      .eq('status', 'waiting'),
+    currentWaiting.status === 'waiting'
+      ? supabase
+          .from('waitings_public')
+          .select('id', { count: 'exact', head: true })
+          .eq('store_id', storeId)
+          .eq('status', 'waiting')
+          .lt('queue_number', currentWaiting.queue_number)
+      : Promise.resolve({ count: 0, error: null }),
+  ])
 
-  return { myPosition, totalWaiting }
+  if (totalWaitingError) throw new Error(totalWaitingError.message)
+  if (aheadError) throw new Error(aheadError.message)
+
+  const totalWaiting = Math.max(0, Number(totalWaitingCount ?? 0))
+  const myPosition = currentWaiting.status === 'waiting'
+    ? Math.max(0, Number(aheadCount ?? 0))
+    : totalWaiting
+
+  return {
+    myPosition,
+    totalWaiting,
+    status: currentWaiting.status as WaitingStatus,
+  }
 }
 
 // -------------------------------------------------------
@@ -147,5 +180,5 @@ export async function findAvailableTable(
     .maybeSingle()
 
   if (error) throw new Error(error.message)
-  return data
+  return data ?? null
 }

@@ -101,52 +101,40 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     await expect(page.getByRole('button', { name: '대기 등록 완료하기' })).toBeVisible()
   })
 
-  test('SC-026/027: 대기 등록 API 검증 — RPC + INSERT + 조회', async ({ page }) => {
+  test('SC-026/027: 대기 등록 API 검증 — atomic RPC + 조회', async ({ page }) => {
     expect(storeId).toBeTruthy()
 
-    // 점주 권한으로 RPC 호출 + waitings INSERT를 API로 직접 수행
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
 
-    // next_queue_number RPC 호출
     const { url: supabaseUrl } = getSupabaseConfig()
     const headers = await supabaseHeaders(page)
 
-    const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/next_queue_number`, {
+    const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/create_waiting_atomic`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ p_store_id: storeId }),
+      body: JSON.stringify({ p_store_id: storeId, p_phone: '01012345678', p_party_size: 3 }),
     })
 
     if (!rpcRes.ok) {
       const errText = await rpcRes.text()
-      throw new Error(`next_queue_number RPC 실패 (${rpcRes.status}): ${errText}`)
+      throw new Error(`create_waiting_atomic RPC 실패 (${rpcRes.status}): ${errText}`)
     }
 
-    const queueNumber = await rpcRes.json()
-    expect(queueNumber, '대기 번호가 양수여야 합니다.').toBeGreaterThan(0)
+    const payload = await rpcRes.json() as { queue_number: number; waiting_id: string }
+    expect(payload.queue_number, '대기 번호가 양수여야 합니다.').toBeGreaterThan(0)
+    expect(payload.waiting_id, 'waiting_id가 반환되어야 합니다.').toBeTruthy()
 
-    // waitings INSERT
-    const insertRows = await supabasePost<WaitingRow>(page, 'waitings', {
-      store_id: storeId,
-      queue_number: queueNumber,
-      phone: '01012345678',
-      party_size: 3,
-      status: 'waiting',
-    })
-    expect(insertRows.length, 'waitings INSERT가 성공해야 합니다.').toBeGreaterThan(0)
-
-    const entry = insertRows[0]
-    expect(entry.phone).toBe('01012345678')
-    expect(entry.party_size).toBe(3)
-    expect(entry.queue_number).toBe(queueNumber)
-    expect(entry.status).toBe('waiting')
-
-    // SC-027: 조회 확인
     const readRows = await supabaseGet<WaitingRow>(
       page,
-      `waitings?select=id,phone,party_size,queue_number,status&store_id=eq.${storeId}&order=created_at.desc&limit=1`
+      `waitings?select=id,phone,party_size,queue_number,status&id=eq.${payload.waiting_id}&limit=1`
     )
     expect(readRows.length).toBeGreaterThan(0)
+
+    const entry = readRows[0]
+    expect(entry.phone).toBe('01012345678')
+    expect(entry.party_size).toBe(3)
+    expect(entry.queue_number).toBe(payload.queue_number)
+    expect(entry.status).toBe('waiting')
     expect(readRows[0].phone).toBe('01012345678')
     expect(readRows[0].queue_number).toBeGreaterThan(0)
   })
@@ -250,6 +238,56 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     expect(saved, 'sessionStorage에 대기 정보가 저장되어야 합니다.').not.toBeNull()
     expect(saved?.waitingId, '대기ID가 저장되어야 합니다.').toBeTruthy()
   })
+
+  test('SC-027A: 대기 취소 후 같은 번호 재등록 시 새 번호를 받는다', async ({ page }) => {
+    expect(storeId).toBeTruthy()
+
+    await page.goto(`/waiting/${STORE_SLUG}`)
+    await page.waitForLoadState('networkidle')
+
+    for (const digit of ['1', '2', '3', '4', '5', '6', '7', '8']) {
+      await page.locator(`button:has-text("${digit}")`).first().click()
+    }
+
+    await page.getByRole('button', { name: '다음', exact: true }).click()
+    await page.getByRole('button', { name: '대기 등록 완료하기' }).click()
+    await expect(page.getByRole('heading', { name: /대기 등록이 완료되었습니다!/ })).toBeVisible({ timeout: 10000 })
+
+    const storageKey = `waiting:${STORE_SLUG}`
+    const firstSaved = await page.evaluate((key) => {
+      const raw = sessionStorage.getItem(key)
+      return raw ? JSON.parse(raw) : null
+    }, storageKey)
+    expect(firstSaved?.waitingId).toBeTruthy()
+    expect(firstSaved?.queueNumber).toBeGreaterThan(0)
+
+    await page.getByRole('button', { name: '대기 취소하기' }).click()
+    await expect(page.getByRole('heading', { name: /연락받을 휴대폰 번호를 입력해 주세요/ })).toBeVisible({ timeout: 10000 })
+
+    const cancelledRows = await supabaseGet<WaitingRow>(
+      page,
+      `waitings?select=id,queue_number,status&id=eq.${firstSaved.waitingId}&limit=1`,
+    )
+    expect(cancelledRows[0]?.status).toBe('cancelled')
+
+    for (const digit of ['1', '2', '3', '4', '5', '6', '7', '8']) {
+      await page.locator(`button:has-text("${digit}")`).first().click()
+    }
+
+    await page.getByRole('button', { name: '다음', exact: true }).click()
+    await page.getByRole('button', { name: '대기 등록 완료하기' }).click()
+    await expect(page.getByRole('heading', { name: /대기 등록이 완료되었습니다!/ })).toBeVisible({ timeout: 10000 })
+
+    const secondSaved = await page.evaluate((key) => {
+      const raw = sessionStorage.getItem(key)
+      return raw ? JSON.parse(raw) : null
+    }, storageKey)
+
+    expect(secondSaved?.waitingId).toBeTruthy()
+    expect(secondSaved?.waitingId).not.toBe(firstSaved.waitingId)
+    expect(secondSaved?.queueNumber).toBeGreaterThan(firstSaved.queueNumber)
+  })
+
 
   test.afterAll(async () => {
     await deleteStoresWithTestTag()

@@ -26,11 +26,11 @@ beforeEach(() => {
 })
 
 describe('createWaiting', () => {
-  it('should call next_queue_number RPC then insert waiting', async () => {
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: 42, error: null } as any)
-    vi.mocked(supabase.from).mockReturnValue(
-      createQueryMock({ data: { id: 'w1' }, error: null }) as any,
-    )
+  it('should call create_waiting_atomic RPC without direct insert', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: { queue_number: 42, waiting_id: 'w1' },
+      error: null,
+    } as any)
 
     const result = await createWaiting({
       storeId: 's1',
@@ -38,8 +38,12 @@ describe('createWaiting', () => {
       partySize: 3,
     })
 
-    expect(supabase.rpc).toHaveBeenCalledWith('next_queue_number', { p_store_id: 's1' })
-    expect(supabase.from).toHaveBeenCalledWith('waitings')
+    expect(supabase.rpc).toHaveBeenCalledWith('create_waiting_atomic', {
+      p_store_id: 's1',
+      p_phone: '01012345678',
+      p_party_size: 3,
+    })
+    expect(supabase.from).not.toHaveBeenCalledWith('waitings')
     expect(result).toEqual({ queueNumber: 42, waitingId: 'w1' })
   })
 
@@ -56,52 +60,57 @@ describe('createWaiting', () => {
     })).rejects.toThrow('RPC error')
   })
 
-  it('should throw when INSERT fails', async () => {
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: 1, error: null } as any)
-    vi.mocked(supabase.from).mockReturnValue(
-      createQueryMock({ data: null, error: { message: 'insert failed' } }) as any,
-    )
+  it('should throw when RPC payload is incomplete', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: { queue_number: 1 },
+      error: null,
+    } as any)
 
     await expect(createWaiting({
       storeId: 's1',
       phone: '010',
       partySize: 2,
-    })).rejects.toThrow('insert failed')
+    })).rejects.toThrow('waiting creation returned incomplete payload')
   })
 })
 
 describe('getWaitingStatus', () => {
-  it('should compute position and total waiting count', async () => {
-    const waitings = [
-      { id: 'w1', queue_number: 1 },
-      { id: 'w2', queue_number: 2 },
-      { id: 'w3', queue_number: 3 },
-    ]
-    vi.mocked(supabase.from).mockReturnValue(
-      createQueryMock({ data: waitings, error: null }) as any,
-    )
+  it('should compute position and total waiting count for active waiting', async () => {
+    vi.mocked(supabase.from)
+      .mockReturnValueOnce(
+        createQueryMock({ data: { id: 'w2', queue_number: 2, status: 'waiting' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        createQueryMock({ data: null, count: 3, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        createQueryMock({ data: null, count: 1, error: null }) as any,
+      )
 
     const result = await getWaitingStatus('s1', 'w2')
-    expect(result).toEqual({ myPosition: 1, totalWaiting: 3 })
+    expect(result).toEqual({ myPosition: 1, totalWaiting: 3, status: 'waiting' })
   })
 
-  it('should return totalWaiting as position when ID not found', async () => {
-    const waitings = [{ id: 'w1', queue_number: 1 }]
-    vi.mocked(supabase.from).mockReturnValue(
-      createQueryMock({ data: waitings, error: null }) as any,
+  it('should return zeroed snapshot when waiting ID is missing', async () => {
+    vi.mocked(supabase.from).mockReturnValueOnce(
+      createQueryMock({ data: null, error: null }) as any,
     )
 
     const result = await getWaitingStatus('s1', 'unknown')
-    expect(result).toEqual({ myPosition: 1, totalWaiting: 1 })
+    expect(result).toEqual({ myPosition: 0, totalWaiting: 0, status: null })
   })
 
-  it('should handle empty waiting list', async () => {
-    vi.mocked(supabase.from).mockReturnValue(
-      createQueryMock({ data: [], error: null }) as any,
-    )
+  it('should return total waiting count for terminal statuses', async () => {
+    vi.mocked(supabase.from)
+      .mockReturnValueOnce(
+        createQueryMock({ data: { id: 'w1', queue_number: 4, status: 'cancelled' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        createQueryMock({ data: null, count: 2, error: null }) as any,
+      )
 
     const result = await getWaitingStatus('s1', 'w1')
-    expect(result).toEqual({ myPosition: 0, totalWaiting: 0 })
+    expect(result).toEqual({ myPosition: 2, totalWaiting: 2, status: 'cancelled' })
   })
 })
 

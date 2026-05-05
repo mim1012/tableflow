@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import type { WaitingStatus } from '@/types/database'
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -11,6 +12,30 @@ function getServiceClient() {
     auth: { autoRefreshToken: false, persistSession: false },
     global: { headers: { Authorization: `Bearer ${key}` } },
   })
+}
+
+type WaitingCreationPayload = {
+  queue_number: number
+  waiting_id: string
+}
+
+function normalizeWaitingCreationPayload(payload: unknown): { queueNumber: number; waitingId: string } {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('waiting creation returned incomplete payload')
+  }
+
+  const queueNumber = (payload as WaitingCreationPayload).queue_number
+  const waitingId = (payload as WaitingCreationPayload).waiting_id
+
+  if (typeof queueNumber !== 'number' || !Number.isFinite(queueNumber) || typeof waitingId !== 'string' || waitingId.length === 0) {
+    throw new Error('waiting creation returned incomplete payload')
+  }
+
+  return { queueNumber, waitingId }
+}
+
+function normalizePhone(phone: string) {
+  return phone.replace(/\D/g, '')
 }
 
 async function getStoreName(sb: any, storeId: string) {
@@ -57,7 +82,7 @@ async function getWaitingNotificationContext(
   sb: any,
   waiting: { storeId: string; queueNumber: number },
 ): Promise<WaitingNotificationContext> {
-  const [storeName, settingsResult, aheadResult] = await Promise.all([
+  const [storeName, settingsResult, aheadCountResult] = await Promise.all([
     getStoreName(sb, waiting.storeId),
     sb
       .from('store_settings')
@@ -66,7 +91,7 @@ async function getWaitingNotificationContext(
       .maybeSingle(),
     sb
       .from('waitings')
-      .select('id')
+      .select('id', { count: 'exact', head: true })
       .eq('store_id', waiting.storeId)
       .eq('status', 'waiting')
       .lt('queue_number', waiting.queueNumber),
@@ -76,7 +101,7 @@ async function getWaitingNotificationContext(
     0,
     Number(settingsResult?.data?.waiting_minutes_per_team ?? 0),
   )
-  const teamsAhead = Array.isArray(aheadResult?.data) ? aheadResult.data.length : 0
+  const teamsAhead = Math.max(0, Number(aheadCountResult?.count ?? 0))
 
   return {
     storeName,
@@ -113,26 +138,14 @@ async function createWaitingWithClient(
   phone: string,
   partySize: number,
 ): Promise<{ queueNumber: number; waitingId: string }> {
-  const { data: queueNumber, error: rpcError } = await sb.rpc('next_queue_number', {
+  const { data, error } = await sb.rpc('create_waiting_atomic', {
     p_store_id: storeId,
+    p_phone: normalizePhone(phone),
+    p_party_size: partySize,
   })
-  if (rpcError) throw new Error(rpcError.message)
-
-  const waitingId = crypto.randomUUID()
-  const { error } = await sb
-    .from('waitings')
-    .insert({
-      id: waitingId,
-      store_id: storeId,
-      queue_number: queueNumber as number,
-      phone,
-      party_size: partySize,
-      status: 'waiting',
-    })
-
   if (error) throw new Error(error.message)
 
-  return { queueNumber: queueNumber as number, waitingId }
+  return normalizeWaitingCreationPayload(data)
 }
 
 export async function createWaitingAction(
@@ -156,11 +169,78 @@ export async function createWaitingAction(
 
   void notifyWaitingAlimtalk(
     serviceClient,
-    { phone, queueNumber: result.queueNumber, storeId },
+    { phone: normalizePhone(phone), queueNumber: result.queueNumber, storeId },
     'WAITING_CREATED',
   )
 
   return result
+}
+
+type CancelableWaitingRow = {
+  id: string
+  phone: string
+  queue_number: number
+  store_id: string
+  status: WaitingStatus
+}
+
+async function findWaitingForCancellation(
+  sb: any,
+  params: { storeId: string; waitingId: string; phone: string },
+): Promise<CancelableWaitingRow | null> {
+  const { data, error } = await sb
+    .from('waitings')
+    .select('id, phone, queue_number, store_id, status')
+    .eq('id', params.waitingId)
+    .eq('store_id', params.storeId)
+    .eq('phone', normalizePhone(params.phone))
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  return data ?? null
+}
+
+async function cancelWaitingWithClient(
+  sb: any,
+  waitingId: string,
+): Promise<void> {
+  const { error, data: updatedWaiting } = await sb
+    .from('waitings')
+    .update({ status: 'cancelled' })
+    .eq('id', waitingId)
+    .in('status', ['waiting', 'called'])
+    .select('id')
+    .single()
+
+  if (error || !updatedWaiting) {
+    throw new Error(`대기 취소 실패: ${error?.message ?? '대기 정보를 찾을 수 없습니다.'}`)
+  }
+}
+
+export async function cancelWaitingAction(
+  storeId: string,
+  waitingId: string,
+  phone: string,
+): Promise<void> {
+  const supabase = await createClient()
+  const sb = supabase as any
+  const serviceClient = getServiceClient()
+  const lookupClient = serviceClient ?? sb
+
+  const waiting = await findWaitingForCancellation(lookupClient, { storeId, waitingId, phone })
+  if (!waiting) {
+    throw new Error('대기 정보를 찾을 수 없습니다.')
+  }
+
+  if (waiting.status === 'cancelled') {
+    return
+  }
+
+  if (waiting.status !== 'waiting' && waiting.status !== 'called') {
+    throw new Error('이미 종료된 대기입니다.')
+  }
+
+  await cancelWaitingWithClient(serviceClient ?? sb, waitingId)
 }
 
 export async function callWaitingAction(waitingId: string): Promise<void> {
