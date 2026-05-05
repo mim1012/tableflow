@@ -175,7 +175,14 @@ describe('status transitions', () => {
       createQueryMock({ data: null, error: null }) as any,
     )
 
-    await expect(cancelWaiting('w1')).resolves.toBeUndefined()
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: 'w1', error: null } as any)
+
+    await expect(cancelWaiting({ storeId: 's1', waitingId: 'w1', phone: '01012345678' })).resolves.toBeUndefined()
+    expect(supabase.rpc).toHaveBeenCalledWith('cancel_waiting_public', {
+      p_store_id: 's1',
+      p_waiting_id: 'w1',
+      p_phone: '01012345678',
+    })
   })
 
   it('noShowWaiting should update status to no_show', async () => {
@@ -192,6 +199,12 @@ describe('status transitions', () => {
     )
 
     await expect(callWaiting('w1')).rejects.toThrow('update error')
+  })
+
+  it('cancelWaiting should throw when rpc fails', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({ data: null, error: { message: 'cancel error' } } as any)
+
+    await expect(cancelWaiting({ storeId: 's1', waitingId: 'w1', phone: '01012345678' })).rejects.toThrow('cancel error')
   })
 })
 

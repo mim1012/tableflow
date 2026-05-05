@@ -4,8 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { ChevronLeft, Users, CheckCircle2, Delete, RotateCcw } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { createClient } from '@/lib/supabase/client'
-import { cancelWaitingAction } from '@/app/actions/waiting'
-import { createWaiting as createWaitingRpc } from '@/lib/api/waiting'
+import { createWaiting as createWaitingRpc, cancelWaiting as cancelWaitingRpc } from '@/lib/api/waiting'
 import type { StoreRow, WaitingStatus } from '@/types/database'
 import { getWaitingNextButtonHelperText, isWaitingPhoneComplete } from '../../ui-helpers'
 
@@ -18,7 +17,7 @@ async function createWaiting(params: { storeId: string; phone: string; partySize
 }
 
 async function cancelWaiting(params: { storeId: string; waitingId: string; phone: string }) {
-  return cancelWaitingAction(params.storeId, params.waitingId, params.phone)
+  return cancelWaitingRpc(params)
 }
 
 async function getWaitingSnapshot(storeId: string, waitingId: string) {

@@ -154,8 +154,18 @@ export async function completeWaiting(waitingId: string): Promise<void> {
   })
 }
 
-export async function cancelWaiting(waitingId: string): Promise<void> {
-  await updateWaitingStatus(waitingId, { status: 'cancelled' })
+export async function cancelWaiting(params: {
+  storeId: string
+  waitingId: string
+  phone: string
+}): Promise<void> {
+  const { error } = await supabase.rpc('cancel_waiting_public', {
+    p_store_id: params.storeId,
+    p_waiting_id: params.waitingId,
+    p_phone: params.phone.replace(/\D/g, ''),
+  })
+
+  if (error) throw new Error(error.message)
 }
 
 export async function noShowWaiting(waitingId: string): Promise<void> {

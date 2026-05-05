@@ -780,7 +780,11 @@ export interface Database {
           created_at: string
         }
       }
-      create_waiting_atomic: {
+      cancel_waiting_public: {
+          Args: { p_phone: string; p_store_id: string; p_waiting_id: string }
+          Returns: string
+        }
+        create_waiting_atomic: {
         Args: { p_store_id: string; p_phone: string; p_party_size: number }
         Returns: { queue_number: number; waiting_id: string }
       }
