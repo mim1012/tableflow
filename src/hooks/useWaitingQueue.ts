@@ -7,6 +7,22 @@ const supabase = _supabase as any
 import { getWaitings } from '@/lib/api/waiting'
 import type { WaitingRow } from '@/types/database'
 
+const ACTIVE_WAITING_STATUSES = new Set<WaitingRow['status']>(['waiting', 'called'])
+
+function sortWaitings(waitings: WaitingRow[]) {
+  return [...waitings].sort((a, b) => a.queue_number - b.queue_number)
+}
+
+export function applyWaitingUpdate(prev: WaitingRow[], updated: WaitingRow): WaitingRow[] {
+  const withoutUpdated = prev.filter((waiting) => waiting.id !== updated.id)
+
+  if (!ACTIVE_WAITING_STATUSES.has(updated.status)) {
+    return withoutUpdated
+  }
+
+  return sortWaitings([...withoutUpdated, updated])
+}
+
 export function useWaitingQueue(storeId: string | null) {
   const [waitings, setWaitings] = useState<WaitingRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -40,6 +56,9 @@ export function useWaitingQueue(storeId: string | null) {
         },
         (payload: any) => {
           const newRow = payload.new as WaitingRow
+          if (!ACTIVE_WAITING_STATUSES.has(newRow.status)) {
+            return
+          }
           setWaitings((prev) => {
             // avoid duplicates
             if (prev.some((w) => w.id === newRow.id)) return prev
@@ -47,9 +66,7 @@ export function useWaitingQueue(storeId: string | null) {
               `새 대기 등록: ${newRow.queue_number}번 (${newRow.party_size}명)`,
               { duration: 4000 },
             )
-            return [...prev, newRow].sort(
-              (a, b) => a.queue_number - b.queue_number,
-            )
+            return sortWaitings([...prev, newRow])
           })
         },
       )
@@ -63,13 +80,7 @@ export function useWaitingQueue(storeId: string | null) {
         },
         (payload: any) => {
           const updated = payload.new as WaitingRow
-          setWaitings((prev) => {
-            // Remove from list when status leaves 'waiting'
-            if (updated.status !== 'waiting') {
-              return prev.filter((w) => w.id !== updated.id)
-            }
-            return prev.map((w) => (w.id === updated.id ? updated : w))
-          })
+          setWaitings((prev) => applyWaitingUpdate(prev, updated))
         },
       )
       .subscribe()

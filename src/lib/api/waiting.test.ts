@@ -115,14 +115,19 @@ describe('getWaitingStatus', () => {
 })
 
 describe('getWaitings', () => {
-  it('should return waiting list for admin', async () => {
-    const list = [{ id: 'w1', queue_number: 1, status: 'waiting' }]
-    vi.mocked(supabase.from).mockReturnValue(
-      createQueryMock({ data: list, error: null }) as any,
-    )
+  it('should return waiting and called list for admin', async () => {
+    const list = [
+      { id: 'w1', queue_number: 1, status: 'waiting' },
+      { id: 'w2', queue_number: 2, status: 'called' },
+    ]
+    const query = createQueryMock({ data: list, error: null })
+    vi.mocked(supabase.from).mockReturnValue(query as any)
 
     const result = await getWaitings('s1')
     expect(supabase.from).toHaveBeenCalledWith('waitings')
+    expect(query.eq).toHaveBeenCalledWith('store_id', 's1')
+    expect(query.in).toHaveBeenCalledWith('status', ['waiting', 'called'])
+    expect(query.order).toHaveBeenCalledWith('queue_number', { ascending: true })
     expect(result).toEqual(list)
   })
 

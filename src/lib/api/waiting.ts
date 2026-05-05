@@ -101,7 +101,7 @@ export async function getWaitings(storeId: string): Promise<WaitingRow[]> {
     .from('waitings')
     .select('*')
     .eq('store_id', storeId)
-    .eq('status', 'waiting')
+    .in('status', ['waiting', 'called'])
     .order('queue_number', { ascending: true })
 
   if (error) throw new Error(error.message)
