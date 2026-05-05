@@ -38,6 +38,6 @@ Chronological SQL migration files applied to the Supabase PostgreSQL database. C
 |----------|---------|
 | `order_atomic` | Validate and create order atomically (price, stock, options) |
 | `add_table_atomic` | Create table with duplicate name check |
-| `get_next_queue_number` | Thread-safe queue number with daily reset |
+| `get_next_queue_number` | Thread-safe queue number with store-wide monotonic increment |
 
 <!-- MANUAL: -->

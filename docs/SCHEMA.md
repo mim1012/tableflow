@@ -52,11 +52,14 @@ platform_alimtalk_templates  ← 플랫폼 전역 (store 무관)
 |------|------|------|
 | store_id | uuid PK FK → stores | |
 | current_number | int DEFAULT 0 | 현재까지 발급된 마지막 번호 |
+| last_reset_date | date | 과거 일일 리셋 호환용 보조 컬럼(번호는 더 이상 재사용하지 않음) |
 
 > `next_queue_number(store_id)` 함수로 채번 — row lock으로 동시 요청 중복 방지
 > ```sql
-> queue_number = next_queue_number(store_id)  -- 1, 2, 3, ...
+> queue_number = next_queue_number(store_id)  -- 1, 2, 3, ... (store 단위 전역 증가)
 > ```
+>
+> `waitings`가 `UNIQUE(store_id, queue_number)`를 유지하므로, 운영에서는 queue_number를 날짜별로 재사용하지 않는다.
 
 ---
 
@@ -251,7 +254,7 @@ waiting → called → seated → completed (식사 종료)
 -- 테이블 원자적 추가 (레이스 컨디션 없이 다음 번호 자동 채번)
 SELECT * FROM add_table_atomic('store-uuid');
 
--- 대기번호 채번 (row lock으로 동시성 보장)
+-- 대기번호 채번 (row lock으로 동시성 보장, store 단위 전역 증가)
 SELECT next_queue_number('store-uuid');  -- 1, 2, 3, ...
 
 -- 웨이팅 자동 배정 쿼리

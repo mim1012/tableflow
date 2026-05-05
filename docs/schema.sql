@@ -28,7 +28,7 @@ CREATE TABLE store_settings (
 );
 
 -- ============================================================
--- 3. store_queue_sequences — 매장별 대기번호 시퀀스
+-- 3. store_queue_sequences — 매장별 대기번호 시퀀스 (번호는 날짜별 재사용 없이 store 단위 전역 증가)
 -- 동시 요청 시 row lock으로 중복 방지
 -- ============================================================
 CREATE TABLE store_queue_sequences (
@@ -41,21 +41,22 @@ CREATE TABLE store_queue_sequences (
 CREATE OR REPLACE FUNCTION next_queue_number(p_store_id uuid)
 RETURNS int LANGUAGE plpgsql AS $func$
 DECLARE
-  v_next  int;
-  v_today date := (now() AT TIME ZONE 'Asia/Seoul')::date;
+  v_next         int;
+  v_max_existing int;
+  v_today        date := (now() AT TIME ZONE 'Asia/Seoul')::date;
 BEGIN
-  UPDATE store_queue_sequences
-  SET
-    current_number  = CASE WHEN last_reset_date < v_today THEN 1 ELSE current_number + 1 END,
-    last_reset_date = v_today
-  WHERE store_id = p_store_id
-  RETURNING current_number INTO v_next;
+  SELECT COALESCE(MAX(queue_number), 0)
+  INTO v_max_existing
+  FROM waitings
+  WHERE store_id = p_store_id;
 
-  IF NOT FOUND THEN
-    INSERT INTO store_queue_sequences (store_id, current_number, last_reset_date)
-    VALUES (p_store_id, 1, v_today)
-    RETURNING current_number INTO v_next;
-  END IF;
+  INSERT INTO store_queue_sequences (store_id, current_number, last_reset_date)
+  VALUES (p_store_id, v_max_existing + 1, v_today)
+  ON CONFLICT (store_id) DO UPDATE
+  SET
+    current_number = GREATEST(store_queue_sequences.current_number, v_max_existing) + 1,
+    last_reset_date = EXCLUDED.last_reset_date
+  RETURNING current_number INTO v_next;
 
   RETURN v_next;
 END;

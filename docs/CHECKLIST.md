@@ -68,7 +68,7 @@
 - [x] Staff API 차단 — 메뉴/직원/설정 수정 불가 (SEC-E07~10)
 - [x] store_settings 역할 기반 RLS (owner/manager만 수정)
 - [x] 매장 구독 상태 검증 (checkStoreActive)
-- [x] 대기번호 rollover 보안 (sequential + reset)
+- [x] 대기번호 rollover 보안 (sequential + no historical reuse)
 
 ---
 
