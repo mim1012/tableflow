@@ -9,6 +9,9 @@ import type { WaitingRow } from '@/types/database'
 
 const ACTIVE_WAITING_STATUSES = new Set<WaitingRow['status']>(['waiting', 'called'])
 
+type ActiveWaitingStatus = Extract<WaitingRow['status'], 'waiting' | 'called'>
+export type WaitingOverrideStatus = ActiveWaitingStatus | 'completed' | 'cancelled' | 'no_show' | 'seated'
+
 function sortWaitings(waitings: WaitingRow[]) {
   return [...waitings].sort((a, b) => a.queue_number - b.queue_number)
 }
@@ -21,6 +24,50 @@ export function applyWaitingUpdate(prev: WaitingRow[], updated: WaitingRow): Wai
   }
 
   return sortWaitings([...withoutUpdated, updated])
+}
+
+export function applyWaitingOverrides(
+  waitings: WaitingRow[],
+  overrides: Map<string, WaitingOverrideStatus>,
+): WaitingRow[] {
+  return sortWaitings(
+    waitings
+      .map((waiting) => {
+        const status = overrides.get(waiting.id)
+        return status ? { ...waiting, status } : waiting
+      })
+      .filter((waiting) => ACTIVE_WAITING_STATUSES.has(waiting.status)),
+  )
+}
+
+export function clearConfirmedWaitingOverrides(
+  overrides: Map<string, WaitingOverrideStatus>,
+  waitings: WaitingRow[],
+): Map<string, WaitingOverrideStatus> {
+  if (overrides.size === 0) return overrides
+
+  const waitingsById = new Map(waitings.map((waiting) => [waiting.id, waiting]))
+  const next = new Map(overrides)
+  let changed = false
+
+  for (const [waitingId, status] of overrides) {
+    const waiting = waitingsById.get(waitingId)
+
+    if (!waiting) {
+      if (!ACTIVE_WAITING_STATUSES.has(status)) {
+        next.delete(waitingId)
+        changed = true
+      }
+      continue
+    }
+
+    if (waiting.status === status) {
+      next.delete(waitingId)
+      changed = true
+    }
+  }
+
+  return changed ? next : overrides
 }
 
 export function useWaitingQueue(storeId: string | null) {

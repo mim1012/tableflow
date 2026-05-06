@@ -26,7 +26,8 @@ import { primeStaffAlertAudio, isStaffAlertSoundEnabled, setStaffAlertSoundEnabl
 import { useOrders } from '@/hooks/useOrders'
 import { useRealtimeTables } from '@/hooks/useRealtimeTables'
 import { useMenuAdmin } from '@/hooks/useMenuAdmin'
-import { useWaitingQueue } from '@/hooks/useWaitingQueue'
+import { applyWaitingOverrides, clearConfirmedWaitingOverrides, useWaitingQueue } from '@/hooks/useWaitingQueue'
+import type { WaitingOverrideStatus } from '@/hooks/useWaitingQueue'
 import { useNotificationPermission } from '@/hooks/useNotificationPermission'
 
 import {
@@ -243,6 +244,14 @@ export default function AdminDashboardClient() {
   // Menus: no local state — Realtime is single source of truth
   const menus = adaptedMenus
 
+  // Waitings: keep optimistic status moves until Realtime confirms them
+  const [waitingStatusOverrides, setWaitingStatusOverrides] = useState<Map<string, WaitingOverrideStatus>>(new Map())
+  const waitings = useMemo(() => applyWaitingOverrides(rawWaitings, waitingStatusOverrides), [rawWaitings, waitingStatusOverrides])
+
+  useEffect(() => {
+    setWaitingStatusOverrides((prev) => clearConfirmedWaitingOverrides(prev, rawWaitings))
+  }, [rawWaitings])
+
   // --- App mode / tab ---
   const [appMode, setAppMode] = useState<'pos' | 'admin'>('pos')
   const [activeTab, setActiveTab] = useState('orders')
@@ -417,6 +426,7 @@ export default function AdminDashboardClient() {
   const callWaiting = async (waitingId: string, queueNumber: number) => {
     try {
       await callWaitingAction(waitingId)
+      setWaitingStatusOverrides((prev) => new Map(prev).set(waitingId, 'called'))
       toast.success(`대기 ${queueNumber}번 고객님을 호출했습니다.`, { icon: <Volume2 className="w-5 h-5 text-blue-500" /> })
     } catch {
       toast.error('호출에 실패했습니다.')
@@ -426,6 +436,7 @@ export default function AdminDashboardClient() {
   const completeWaiting = async (waitingId: string, queueNumber: number) => {
     try {
       await apiCompleteWaiting(waitingId)
+      setWaitingStatusOverrides((prev) => new Map(prev).set(waitingId, 'completed'))
       toast.success(`대기 ${queueNumber}번 고객님 입장이 완료되었습니다.`)
     } catch {
       toast.error('입장 처리에 실패했습니다.')
@@ -818,7 +829,7 @@ export default function AdminDashboardClient() {
         <div className="flex items-center h-full w-full justify-around px-1">
           {(appMode === 'pos' ? [
             { id: 'orders', icon: ChefHat, label: 'KDS', badge: pendingOrders.length + preparingOrders.length },
-            { id: 'waiting', icon: Users, label: '웨이팅', badge: rawWaitings.length },
+            { id: 'waiting', icon: Users, label: '웨이팅', badge: waitings.length },
             { id: 'tables', icon: LayoutGrid, label: '홀현황' },
           ] : [
             { id: 'analytics', icon: LayoutDashboard, label: '대시보드' },
@@ -907,7 +918,7 @@ export default function AdminDashboardClient() {
         <nav className="flex-1 py-6 px-4 space-y-1">
           {(appMode === 'pos' ? [
             { id: 'orders', icon: ChefHat, label: '주방 디스플레이', badge: pendingOrders.length },
-            { id: 'waiting', icon: Users, label: '웨이팅 관리', badge: rawWaitings.length },
+            { id: 'waiting', icon: Users, label: '웨이팅 관리', badge: waitings.length },
             { id: 'tables', icon: LayoutDashboard, label: '홀 테이블 현황' },
           ] : [
             { id: 'analytics', icon: BarChart4, label: '매출 분석' },
@@ -1057,7 +1068,7 @@ export default function AdminDashboardClient() {
             {activeTab === 'waiting' && (
               <motion.div key="waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <WaitingPanel
-                  waitings={rawWaitings}
+                  waitings={waitings}
                   callWaiting={callWaiting}
                   completeWaiting={completeWaiting}
                   onOpenKioskMode={() => {}}
