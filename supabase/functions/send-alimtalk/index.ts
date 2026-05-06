@@ -65,7 +65,95 @@ interface SendRequest {
   storeName?: string   // WAITING_* 시 매장명
   teamsAhead?: number  // WAITING_* 시 발송 직전 내 앞 팀 수
   estimatedWaitMinutes?: number // WAITING_* 시 예상 대기 시간(분)
+  storeId?: string
+  waitingId?: string
 }
+
+function toWaitingNotificationEvent(type: MessageType): ManagedTemplateEvent | null {
+  if (type === 'WAITING_CREATED') return 'waiting_created'
+  if (type === 'WAITING_CALLED') return 'waiting_called'
+  return null
+}
+
+async function getWaitingNotificationContext(
+  adminClient: any,
+  params: { storeId: string; queueNumber: number },
+): Promise<{ storeName: string; teamsAhead: number; estimatedWaitMinutes: number }> {
+  const [storeResult, settingsResult, aheadCountResult] = await Promise.all([
+    adminClient
+      .from('stores')
+      .select('name')
+      .eq('id', params.storeId)
+      .single(),
+    adminClient
+      .from('store_settings')
+      .select('waiting_minutes_per_team')
+      .eq('store_id', params.storeId)
+      .maybeSingle(),
+    adminClient
+      .from('waitings')
+      .select('id', { count: 'exact', head: true })
+      .eq('store_id', params.storeId)
+      .eq('status', 'waiting')
+      .lt('queue_number', params.queueNumber),
+  ])
+
+  const storeName = storeResult?.data?.name ?? ''
+  const waitingMinutesPerTeam = Math.max(0, Number(settingsResult?.data?.waiting_minutes_per_team ?? 0))
+  const teamsAhead = Math.max(0, Number(aheadCountResult?.count ?? 0))
+
+  return {
+    storeName,
+    teamsAhead,
+    estimatedWaitMinutes: waitingMinutesPerTeam * teamsAhead,
+  }
+}
+
+async function insertWaitingNotificationLog(
+  adminClient: any,
+  params: { storeId: string; waitingId: string; type: MessageType },
+): Promise<string | null> {
+  const event = toWaitingNotificationEvent(params.type)
+  if (!event) return null
+
+  const { data, error } = await adminClient
+    .from('waiting_notifications')
+    .insert({
+      waiting_id: params.waitingId,
+      store_id: params.storeId,
+      event,
+      status: 'pending',
+      provider: 'kakao_alimtalk',
+    })
+    .select('id')
+    .single()
+
+  if (error || !data?.id) {
+    throw new Error(error?.message ?? 'waiting notification log insert failed')
+  }
+
+  return data.id as string
+}
+
+async function updateWaitingNotificationLog(
+  adminClient: any,
+  params: { logId: string; status: 'sent' | 'failed'; errorMessage?: string | null },
+) {
+  const payload: Record<string, string | null> = {
+    status: params.status,
+    error_msg: params.errorMessage ?? null,
+  }
+
+  if (params.status === 'sent') payload.sent_at = new Date().toISOString()
+
+  const { error } = await adminClient
+    .from('waiting_notifications')
+    .update(payload)
+    .eq('id', params.logId)
+
+  if (error) throw new Error(error.message)
+}
+
 
 // ============================================================
 // Solapi 발송
@@ -123,6 +211,8 @@ serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders(req) })
   }
 
+  let parsedBody: Partial<SendRequest> | null = null
+
   try {
     const SOLAPI_API_KEY = Deno.env.get('SOLAPI_API_KEY')
     const SOLAPI_API_SECRET = Deno.env.get('SOLAPI_API_SECRET')
@@ -135,6 +225,12 @@ serve(async (req: Request) => {
         { status: 500, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
       )
     }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const adminClient = supabaseUrl && serviceRoleKey
+      ? createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+      : null
 
     const dbWaitingCreatedTemplate = await getManagedTemplate('waiting_created')
     const dbWaitingCalledTemplate = await getManagedTemplate('waiting_called')
@@ -165,6 +261,7 @@ serve(async (req: Request) => {
     } as const
 
     const body: SendRequest = await req.json()
+    parsedBody = body
     const {
       to,
       type,
@@ -172,9 +269,11 @@ serve(async (req: Request) => {
       points,
       message,
       queueNumber,
-      storeName = '',
-      teamsAhead = 0,
-      estimatedWaitMinutes = 0,
+      storeName: providedStoreName = '',
+      teamsAhead: providedTeamsAhead = 0,
+      estimatedWaitMinutes: providedEstimatedWaitMinutes = 0,
+      storeId,
+      waitingId,
     } = body
 
     if (!to) {
@@ -185,6 +284,21 @@ serve(async (req: Request) => {
     }
 
     let payload: Record<string, unknown>
+    let storeName = providedStoreName
+    let teamsAhead = providedTeamsAhead
+    let estimatedWaitMinutes = providedEstimatedWaitMinutes
+    let notificationLogId: string | null = null
+
+    if ((type === 'WAITING_CREATED' || type === 'WAITING_CALLED') && adminClient && typeof queueNumber === 'number' && storeId) {
+      const context = await getWaitingNotificationContext(adminClient, { storeId, queueNumber })
+      storeName = storeName || context.storeName
+      teamsAhead = context.teamsAhead
+      estimatedWaitMinutes = context.estimatedWaitMinutes
+    }
+
+    if ((type === 'WAITING_CREATED' || type === 'WAITING_CALLED') && adminClient && storeId && waitingId) {
+      notificationLogId = await insertWaitingNotificationLog(adminClient, { storeId, waitingId, type })
+    }
 
     if (type === 'POINT_GRANTED') {
       // 알림톡: 템플릿 심사 완료 후 사용. 없으면 친구톡으로 fallback.
@@ -247,12 +361,46 @@ serve(async (req: Request) => {
 
     const result = await sendViasolapi(payload, SOLAPI_API_KEY, SOLAPI_API_SECRET)
 
+    if (adminClient && notificationLogId) {
+      await updateWaitingNotificationLog(adminClient, { logId: notificationLogId, status: 'sent' })
+    }
+
     return new Response(
       JSON.stringify({ success: true, result }),
       { headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : '알 수 없는 오류'
+
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      const event = parsedBody?.type ? toWaitingNotificationEvent(parsedBody.type) : null
+      if (supabaseUrl && serviceRoleKey && event && parsedBody?.waitingId && parsedBody?.storeId) {
+        const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
+        const { data: existingLog } = await adminClient
+          .from('waiting_notifications')
+          .select('id')
+          .eq('waiting_id', parsedBody.waitingId)
+          .eq('store_id', parsedBody.storeId)
+          .eq('event', event)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (existingLog?.id) {
+          await updateWaitingNotificationLog(adminClient, {
+            logId: existingLog.id as string,
+            status: 'failed',
+            errorMessage: msg,
+          })
+        }
+      }
+    } catch (_) {
+      // no-op: preserve original error response
+    }
+
     return new Response(
       JSON.stringify({ error: msg }),
       { status: 500, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },

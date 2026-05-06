@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createQueryMock } from '@/test/mocks/supabase'
 
-const fetchMock = vi.fn()
-vi.stubGlobal('fetch', fetchMock)
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: vi.fn(),
     rpc: vi.fn(),
+    functions: { invoke: vi.fn() },
   },
 }))
 
@@ -26,7 +25,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  fetchMock.mockResolvedValue({ ok: true, text: vi.fn().mockResolvedValue('') } as any)
+  vi.mocked(supabase.functions.invoke).mockResolvedValue({ data: { ok: true }, error: null } as any)
 })
 
 describe('createWaiting', () => {
@@ -48,15 +47,14 @@ describe('createWaiting', () => {
       p_party_size: 3,
     })
     expect(supabase.from).not.toHaveBeenCalledWith('waitings')
-    expect(fetchMock).toHaveBeenCalledWith('/api/waiting/created-notification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        storeId: 's1',
+    expect(supabase.functions.invoke).toHaveBeenCalledWith('send-alimtalk', {
+      body: {
+        to: '01012345678',
+        type: 'WAITING_CREATED',
         waitingId: 'w1',
-        phone: '01012345678',
+        storeId: 's1',
         queueNumber: 42,
-      }),
+      },
     })
     expect(result).toEqual({ queueNumber: 42, waitingId: 'w1' })
   })
@@ -92,7 +90,7 @@ describe('createWaiting', () => {
       data: { queue_number: 43, waiting_id: 'w43' },
       error: null,
     } as any)
-    fetchMock.mockResolvedValue({ ok: false, statusText: 'Internal Server Error', text: vi.fn().mockResolvedValue('boom') } as any)
+    vi.mocked(supabase.functions.invoke).mockResolvedValue({ data: null, error: new Error('notify failed') } as any)
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 

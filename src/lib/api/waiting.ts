@@ -43,20 +43,18 @@ export async function createWaiting(params: {
   const result = normalizeWaitingCreationPayload(data)
 
   try {
-    const response = await fetch('/api/waiting/created-notification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        storeId,
+    const { error: notifyError } = await supabase.functions.invoke('send-alimtalk', {
+      body: {
+        to: phone,
+        type: 'WAITING_CREATED',
         waitingId: result.waitingId,
-        phone,
+        storeId,
         queueNumber: result.queueNumber,
-      }),
+      },
     })
 
-    if (!response.ok) {
-      const message = await response.text().catch(() => '')
-      console.warn('waiting_created notification request failed', message || response.statusText)
+    if (notifyError) {
+      console.warn('waiting_created notification request failed', notifyError)
     }
   } catch (notifyError) {
     console.warn('waiting_created notification request failed', notifyError)
