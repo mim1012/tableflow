@@ -41,6 +41,21 @@ function makeUpdateChain(result: { data: { id: string } | null; error: { message
   return { update, eq: chain.eq, in: chain.in, select: chain.select, single }
 }
 
+function makeInsertChain(result: { data: { id: string } | null; error: { message: string } | null }) {
+  const single = vi.fn().mockResolvedValue(result)
+  const select = vi.fn().mockReturnValue({ single })
+  const insert = vi.fn().mockReturnValue({ select })
+  return { insert, select, single }
+}
+
+function makeBareUpdateChain(result: { error: { message: string } | null }) {
+  const chain: any = {}
+  chain.eq = vi.fn().mockReturnValue(chain)
+  chain.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result))
+  const update = vi.fn().mockReturnValue(chain)
+  return { update, eq: chain.eq }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   serviceRpcMock.mockReset()
@@ -77,6 +92,12 @@ describe('createWaitingAction', () => {
       .mockReturnValueOnce(
         makeSelectChain({ data: null, count: 4, error: null }) as any,
       )
+      .mockReturnValueOnce(
+        makeInsertChain({ data: { id: 'notif-1' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeBareUpdateChain({ error: null }) as any,
+      )
     functionsInvokeMock.mockResolvedValue({ data: { ok: true }, error: null })
 
     await expect(createWaitingAction('store-1', '01012345678', 3)).resolves.toEqual({
@@ -100,6 +121,8 @@ describe('createWaitingAction', () => {
         estimatedWaitMinutes: 28,
       },
     })
+    await Promise.resolve()
+    expect(serviceFromMock).toHaveBeenCalledWith('waiting_notifications')
   })
 
   it('falls back to service role client when anon RPC fails', async () => {
@@ -115,6 +138,12 @@ describe('createWaitingAction', () => {
       )
       .mockReturnValueOnce(
         makeSelectChain({ data: null, count: 0, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeInsertChain({ data: { id: 'notif-2' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeBareUpdateChain({ error: null }) as any,
       )
     functionsInvokeMock.mockResolvedValue({ data: { ok: true }, error: null })
 
@@ -237,6 +266,13 @@ describe('callWaitingAction', () => {
       .mockReturnValueOnce(
         makeSelectChain({ data: null, count: 2, error: null }) as any,
       )
+      .mockReturnValueOnce(
+        makeInsertChain({ data: { id: 'notif-3' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeBareUpdateChain({ error: null }) as any,
+      )
+    functionsInvokeMock.mockResolvedValue({ data: { ok: true }, error: null })
 
     await expect(callWaitingAction('waiting-1')).resolves.toBeUndefined()
 
@@ -250,6 +286,7 @@ describe('callWaitingAction', () => {
         estimatedWaitMinutes: 10,
       },
     })
+    expect(serviceFromMock).toHaveBeenCalledWith('waiting_notifications')
   })
 
   it('does not send alimtalk when phone is missing', async () => {
@@ -290,6 +327,12 @@ describe('callWaitingAction', () => {
       .mockReturnValueOnce(
         makeSelectChain({ data: null, count: 2, error: null }) as any,
       )
+      .mockReturnValueOnce(
+        makeInsertChain({ data: { id: 'notif-4' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeBareUpdateChain({ error: null }) as any,
+      )
 
     functionsInvokeMock.mockImplementation(
       () => new Promise((resolve) => {
@@ -300,6 +343,45 @@ describe('callWaitingAction', () => {
     const startedAt = Date.now()
     await expect(callWaitingAction('waiting-1')).resolves.toBeUndefined()
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(40)
+  })
+
+  it('marks waiting notification as failed when invoke returns an error', async () => {
+    serverFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({
+          data: { phone: '01099990000', queue_number: 12, store_id: 'store-1', status: 'waiting' },
+          error: null,
+        }) as any,
+      )
+      .mockReturnValueOnce(
+        makeUpdateChain({ data: { id: 'waiting-1' }, error: null }) as any,
+      )
+
+    const failedUpdate = makeBareUpdateChain({ error: null })
+
+    serviceFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 5 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: null, count: 2, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeInsertChain({ data: { id: 'notif-failed' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(failedUpdate as any)
+
+    functionsInvokeMock.mockResolvedValue({ data: null, error: new Error('provider down') })
+
+    await expect(callWaitingAction('waiting-1')).resolves.toBeUndefined()
+
+    expect(failedUpdate.update).toHaveBeenCalledWith({
+      status: 'failed',
+      error_msg: 'provider down',
+    })
   })
 
   it('is a no-op when waiting is already called', async () => {
