@@ -317,17 +317,28 @@ serve(async (req) => {
         },
       ]
 
-      for (const template of managedDefaults) {
+      const managedEvents = managedDefaults.map((template) => template.event)
+      const { data: existingTemplates, error: existingError } = await adminClient
+        .from('platform_alimtalk_templates')
+        .select('event')
+        .in('event', managedEvents)
+
+      if (existingError) throw existingError
+
+      const existingEvents = new Set((existingTemplates ?? []).map((template) => template.event))
+      const missingTemplates = managedDefaults.filter((template) => !existingEvents.has(template.event))
+
+      for (const template of missingTemplates) {
         const { error } = await adminClient
           .from('platform_alimtalk_templates')
-          .upsert({ ...template, updated_at: new Date().toISOString() }, { onConflict: 'event' })
+          .insert({ ...template, updated_at: new Date().toISOString() })
         if (error) throw error
       }
 
       const { data, error } = await adminClient
         .from('platform_alimtalk_templates')
         .select('*')
-        .in('event', managedDefaults.map((template) => template.event))
+        .in('event', managedEvents)
         .order('event', { ascending: true })
 
       if (error) throw error
