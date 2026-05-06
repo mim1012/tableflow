@@ -40,7 +40,29 @@ export async function createWaiting(params: {
   )
   if (error) throw new Error(error.message)
 
-  return normalizeWaitingCreationPayload(data)
+  const result = normalizeWaitingCreationPayload(data)
+
+  try {
+    const response = await fetch('/api/waiting/created-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        storeId,
+        waitingId: result.waitingId,
+        phone,
+        queueNumber: result.queueNumber,
+      }),
+    })
+
+    if (!response.ok) {
+      const message = await response.text().catch(() => '')
+      console.warn('waiting_created notification request failed', message || response.statusText)
+    }
+  } catch (notifyError) {
+    console.warn('waiting_created notification request failed', notifyError)
+  }
+
+  return result
 }
 
 // -------------------------------------------------------

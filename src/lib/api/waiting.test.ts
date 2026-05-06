@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createQueryMock } from '@/test/mocks/supabase'
 
+const fetchMock = vi.fn()
+vi.stubGlobal('fetch', fetchMock)
+
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: vi.fn(),
@@ -23,6 +26,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  fetchMock.mockResolvedValue({ ok: true, text: vi.fn().mockResolvedValue('') } as any)
 })
 
 describe('createWaiting', () => {
@@ -44,6 +48,16 @@ describe('createWaiting', () => {
       p_party_size: 3,
     })
     expect(supabase.from).not.toHaveBeenCalledWith('waitings')
+    expect(fetchMock).toHaveBeenCalledWith('/api/waiting/created-notification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        storeId: 's1',
+        waitingId: 'w1',
+        phone: '01012345678',
+        queueNumber: 42,
+      }),
+    })
     expect(result).toEqual({ queueNumber: 42, waitingId: 'w1' })
   })
 
@@ -71,6 +85,25 @@ describe('createWaiting', () => {
       phone: '010',
       partySize: 2,
     })).rejects.toThrow('waiting creation returned incomplete payload')
+  })
+
+  it('should still return waiting result when notification request fails', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: { queue_number: 43, waiting_id: 'w43' },
+      error: null,
+    } as any)
+    fetchMock.mockResolvedValue({ ok: false, statusText: 'Internal Server Error', text: vi.fn().mockResolvedValue('boom') } as any)
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(createWaiting({
+      storeId: 's1',
+      phone: '01000000000',
+      partySize: 2,
+    })).resolves.toEqual({ queueNumber: 43, waitingId: 'w43' })
+
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 })
 
