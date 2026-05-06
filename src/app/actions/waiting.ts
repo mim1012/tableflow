@@ -255,10 +255,11 @@ export async function createWaitingAction(
     result = await createWaitingWithClient(serviceClient, storeId, phone, partySize)
   }
 
-  void notifyWaitingAlimtalk(
+  await notifyWaitingAlimtalk(
     serviceClient,
     { phone: normalizePhone(phone), queueNumber: result.queueNumber, storeId, waitingId: result.waitingId },
     'WAITING_CREATED',
+    { awaitSend: true },
   )
 
   return result

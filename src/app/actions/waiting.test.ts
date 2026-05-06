@@ -125,6 +125,39 @@ describe('createWaitingAction', () => {
     expect(serviceFromMock).toHaveBeenCalledWith('waiting_notifications')
   })
 
+  it('awaits WAITING_CREATED alimtalk delivery before resolving', async () => {
+    serviceRpcMock.mockResolvedValue({ data: { queue_number: 7, waiting_id: '11111111-1111-4111-8111-111111111111' }, error: null })
+    serviceFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 7 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: null, count: 4, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeInsertChain({ data: { id: 'notif-created-await' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeBareUpdateChain({ error: null }) as any,
+      )
+
+    functionsInvokeMock.mockImplementation(
+      () => new Promise((resolve) => {
+        setTimeout(() => resolve({ data: { ok: true }, error: null }), 50)
+      }),
+    )
+
+    const startedAt = Date.now()
+    await expect(createWaitingAction('store-1', '01012345678', 3)).resolves.toEqual({
+      queueNumber: 7,
+      waitingId: '11111111-1111-4111-8111-111111111111',
+    })
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(40)
+  })
+
   it('falls back to service role client when anon RPC fails', async () => {
     serviceRpcMock
       .mockResolvedValueOnce({ data: null, error: { message: 'permission denied for function create_waiting_atomic' } })
