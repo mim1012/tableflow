@@ -226,6 +226,8 @@ describe('callWaitingAction', () => {
       .mockReturnValueOnce(
         makeUpdateChain({ data: { id: 'waiting-1' }, error: null }) as any,
       )
+
+    serviceFromMock
       .mockReturnValueOnce(
         makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
       )

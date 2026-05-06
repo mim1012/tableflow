@@ -247,6 +247,7 @@ export async function callWaitingAction(waitingId: string): Promise<void> {
   const supabase = await createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+  const serviceClient = getServiceClient()
 
   // 알림톡 발송을 위해 전화번호·대기번호·매장 정보 조회
   const { data: waiting, error: waitingError } = await sb
@@ -276,7 +277,7 @@ export async function callWaitingAction(waitingId: string): Promise<void> {
   // 알림톡 발송 (실패해도 호출 자체는 성공으로 처리)
   if (waiting?.phone) {
     void notifyWaitingAlimtalk(
-      sb,
+      serviceClient ?? sb,
       { phone: waiting.phone, queueNumber: waiting.queue_number, storeId: waiting.store_id },
       'WAITING_CALLED',
     )
