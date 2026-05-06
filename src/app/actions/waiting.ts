@@ -114,12 +114,13 @@ async function notifyWaitingAlimtalk(
   sb: any | null,
   waiting: { phone: string; queueNumber: number; storeId: string },
   type: 'WAITING_CREATED' | 'WAITING_CALLED',
+  options?: { awaitSend?: boolean },
 ) {
   if (!sb) return
 
   try {
     const { storeName, teamsAhead, estimatedWaitMinutes } = await getWaitingNotificationContext(sb, waiting)
-    void sendWaitingAlimtalk(sb, {
+    const sendPromise = sendWaitingAlimtalk(sb, {
       to: waiting.phone,
       type,
       queueNumber: waiting.queueNumber,
@@ -127,6 +128,13 @@ async function notifyWaitingAlimtalk(
       teamsAhead,
       estimatedWaitMinutes,
     })
+
+    if (options?.awaitSend) {
+      await sendPromise
+      return
+    }
+
+    void sendPromise
   } catch {
     // 알림톡 컨텍스트 조회 실패가 대기 등록/호출 자체를 막지 않음
   }
@@ -276,10 +284,11 @@ export async function callWaitingAction(waitingId: string): Promise<void> {
 
   // 알림톡 발송 (실패해도 호출 자체는 성공으로 처리)
   if (waiting?.phone) {
-    void notifyWaitingAlimtalk(
+    await notifyWaitingAlimtalk(
       serviceClient ?? sb,
       { phone: waiting.phone, queueNumber: waiting.queue_number, storeId: waiting.store_id },
       'WAITING_CALLED',
+      { awaitSend: true },
     )
   }
 }

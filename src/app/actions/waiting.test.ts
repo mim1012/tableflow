@@ -268,6 +268,40 @@ describe('callWaitingAction', () => {
     expect(functionsInvokeMock).not.toHaveBeenCalled()
   })
 
+  it('awaits WAITING_CALLED alimtalk delivery before resolving', async () => {
+    serverFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({
+          data: { phone: '01099990000', queue_number: 12, store_id: 'store-1', status: 'waiting' },
+          error: null,
+        }) as any,
+      )
+      .mockReturnValueOnce(
+        makeUpdateChain({ data: { id: 'waiting-1' }, error: null }) as any,
+      )
+
+    serviceFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 5 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: null, count: 2, error: null }) as any,
+      )
+
+    functionsInvokeMock.mockImplementation(
+      () => new Promise((resolve) => {
+        setTimeout(() => resolve({ data: { ok: true }, error: null }), 50)
+      }),
+    )
+
+    const startedAt = Date.now()
+    await expect(callWaitingAction('waiting-1')).resolves.toBeUndefined()
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(40)
+  })
+
   it('is a no-op when waiting is already called', async () => {
     serverFromMock.mockReturnValueOnce(
       makeSelectChain({
