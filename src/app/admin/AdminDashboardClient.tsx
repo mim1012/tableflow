@@ -74,6 +74,7 @@ export default function AdminDashboardClient() {
   // super_admin can override storeId via ?storeId= query param
   const queryStoreId = searchParams.get('storeId')
   const storeId = queryStoreId || user?.storeId || ''
+  const kdsFullscreenHref = storeId ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
 
   // --- Store slug for QR URLs ---
   const [storeSlug, setStoreSlug] = useState('')
@@ -1062,6 +1063,7 @@ export default function AdminDashboardClient() {
                   updateOrderStatus={updateOrderStatus}
                   deleteOrder={deleteOrder}
                   updateOrderPax={updateOrderPax}
+                  fullscreenHref={kdsFullscreenHref}
                 />
               </motion.div>
             )}

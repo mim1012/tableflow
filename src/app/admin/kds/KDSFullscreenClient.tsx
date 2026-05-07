@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ChefHat, ArrowLeft, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -26,8 +27,11 @@ function useCurrentTime() {
 }
 
 export default function KDSFullscreenClient() {
+  const searchParams = useSearchParams()
   const { user, loading: authLoading } = useAuth()
-  const storeId = user?.storeId ?? ''
+  const queryStoreId = searchParams.get('storeId')
+  const storeId = queryStoreId || user?.storeId || ''
+  const fullscreenHref = storeId ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
   const now = useCurrentTime()
 
   // --- Subscription check ---
@@ -201,6 +205,7 @@ export default function KDSFullscreenClient() {
           updateOrderStatus={updateOrderStatus}
           deleteOrder={deleteOrder}
           updateOrderPax={updateOrderPax}
+          fullscreenHref={fullscreenHref}
         />
       </main>
     </div>

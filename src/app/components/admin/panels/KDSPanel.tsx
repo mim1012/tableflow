@@ -22,6 +22,7 @@ interface KDSPanelProps {
   updateOrderStatus: (id: string, newStatus: string) => Promise<void>;
   deleteOrder: (id: string) => Promise<void>;
   updateOrderPax: (id: string, pax: number) => void;
+  fullscreenHref?: string;
 }
 
 export default function KDSPanel({
@@ -29,6 +30,7 @@ export default function KDSPanel({
   updateOrderStatus,
   deleteOrder,
   updateOrderPax,
+  fullscreenHref = '/admin/kds',
 }: KDSPanelProps) {
   const pendingOrders = orders.filter(o => o.status === 'pending');
   const preparingOrders = orders.filter(o => o.status === 'preparing');
@@ -53,7 +55,7 @@ export default function KDSPanel({
           <p className="text-xs md:text-sm text-zinc-600 mt-0.5 md:mt-1">주방 작업에 최적화된 큰 글씨와 고대비 UI입니다.</p>
         </div>
         <Link
-          href="/admin/kds"
+          href={fullscreenHref}
           target="_blank"
           className="flex items-center gap-1.5 bg-zinc-900 text-white px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-colors shadow-sm"
         >
