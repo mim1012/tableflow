@@ -45,11 +45,9 @@ export async function createWaiting(params: {
   try {
     const { error: notifyError } = await supabase.functions.invoke('send-alimtalk', {
       body: {
-        to: phone,
         type: 'WAITING_CREATED',
         waitingId: result.waitingId,
         storeId,
-        queueNumber: result.queueNumber,
       },
     })
 

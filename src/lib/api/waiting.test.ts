@@ -49,11 +49,9 @@ describe('createWaiting', () => {
     expect(supabase.from).not.toHaveBeenCalledWith('waitings')
     expect(supabase.functions.invoke).toHaveBeenCalledWith('send-alimtalk', {
       body: {
-        to: '01012345678',
         type: 'WAITING_CREATED',
         waitingId: 'w1',
         storeId: 's1',
-        queueNumber: 42,
       },
     })
     expect(result).toEqual({ queueNumber: 42, waitingId: 'w1' })

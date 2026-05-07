@@ -56,7 +56,7 @@ async function getManagedTemplate(event: ManagedTemplateEvent): Promise<Platform
 }
 
 interface SendRequest {
-  to: string          // 수신 전화번호
+  to?: string          // 수신 전화번호
   type: MessageType
   customerName?: string
   points?: number     // POINT_GRANTED 시 적립 포인트
@@ -69,10 +69,123 @@ interface SendRequest {
   waitingId?: string
 }
 
+type CallerVerificationResult =
+  | { ok: true }
+  | { ok: false; status: number; error: string }
+
+type WaitingMessageTarget = {
+  to: string
+  queueNumber: number
+  storeName: string
+  teamsAhead: number
+  estimatedWaitMinutes: number
+  waitingStatus: string
+}
+
 function toWaitingNotificationEvent(type: MessageType): ManagedTemplateEvent | null {
   if (type === 'WAITING_CREATED') return 'waiting_created'
   if (type === 'WAITING_CALLED') return 'waiting_called'
   return null
+}
+
+function normalizePhone(phone: string) {
+  return phone.replace(/\D/g, '')
+}
+
+function isServiceRoleRequest(authHeader: string | null, serviceRoleKey: string | null) {
+  return Boolean(authHeader && serviceRoleKey && authHeader === `Bearer ${serviceRoleKey}`)
+}
+
+async function verifyCallerCanSendForStore(
+  req: Request,
+  adminClient: any,
+  storeId: string | undefined,
+): Promise<CallerVerificationResult> {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const authHeader = req.headers.get('Authorization')
+
+  if (isServiceRoleRequest(authHeader, serviceRoleKey)) {
+    return { ok: true }
+  }
+
+  if (!storeId) {
+    return { ok: false, status: 400, error: 'storeId가 필요합니다.' }
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
+  if (!authHeader) {
+    return { ok: false, status: 401, error: 'Unauthorized' }
+  }
+  if (!supabaseUrl || !anonKey) {
+    return { ok: false, status: 500, error: 'Server configuration error.' }
+  }
+
+  const callerClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  })
+
+  const { data: { user }, error: userError } = await callerClient.auth.getUser()
+  if (userError || !user) {
+    return { ok: false, status: 401, error: 'Unauthorized' }
+  }
+
+  if (user.app_metadata?.role === 'super_admin') {
+    return { ok: true }
+  }
+
+  const { data: member, error: memberError } = await adminClient
+    .from('store_members')
+    .select('id, role')
+    .eq('store_id', storeId)
+    .eq('user_id', user.id)
+    .in('role', ['owner', 'manager', 'staff'])
+    .maybeSingle()
+
+  if (memberError) {
+    return { ok: false, status: 500, error: memberError.message }
+  }
+
+  if (!member) {
+    return { ok: false, status: 403, error: 'Forbidden' }
+  }
+
+  return { ok: true }
+}
+
+async function getWaitingMessageTarget(
+  adminClient: any,
+  params: { storeId: string; waitingId: string },
+): Promise<WaitingMessageTarget> {
+  const { data: waiting, error: waitingError } = await adminClient
+    .from('waitings')
+    .select('phone, queue_number, status')
+    .eq('id', params.waitingId)
+    .eq('store_id', params.storeId)
+    .single()
+
+  if (waitingError || !waiting) {
+    throw new Error(waitingError?.message ?? '대기 정보를 찾을 수 없습니다.')
+  }
+
+  const phone = normalizePhone(waiting.phone ?? '')
+  if (!phone) {
+    throw new Error('대기 전화번호가 없습니다.')
+  }
+
+  const context = await getWaitingNotificationContext(adminClient, {
+    storeId: params.storeId,
+    queueNumber: waiting.queue_number,
+  })
+
+  return {
+    to: phone,
+    queueNumber: waiting.queue_number,
+    storeName: context.storeName,
+    teamsAhead: context.teamsAhead,
+    estimatedWaitMinutes: context.estimatedWaitMinutes,
+    waitingStatus: waiting.status,
+  }
 }
 
 async function getWaitingNotificationContext(
@@ -276,41 +389,104 @@ serve(async (req: Request) => {
       waitingId,
     } = body
 
-    if (!to) {
+    let payload: Record<string, unknown>
+    let storeName = providedStoreName
+    let teamsAhead = providedTeamsAhead
+    let estimatedWaitMinutes = providedEstimatedWaitMinutes
+    let resolvedTo = to
+    let resolvedQueueNumber = queueNumber
+    let notificationLogId: string | null = null
+
+    if (!adminClient) {
+      return new Response(
+        JSON.stringify({ error: 'Server configuration error.' }),
+        { status: 500, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+      )
+    }
+
+    if (type === 'WAITING_CREATED') {
+      if (!storeId || !waitingId) {
+        return new Response(
+          JSON.stringify({ error: 'WAITING_CREATED는 storeId와 waitingId가 필요합니다.' }),
+          { status: 400, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
+
+      const target = await getWaitingMessageTarget(adminClient, { storeId, waitingId })
+      if (target.waitingStatus !== 'waiting') {
+        return new Response(
+          JSON.stringify({ error: 'WAITING_CREATED는 waiting 상태에서만 발송할 수 있습니다.' }),
+          { status: 409, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
+
+      resolvedTo = target.to
+      resolvedQueueNumber = target.queueNumber
+      storeName = target.storeName
+      teamsAhead = target.teamsAhead
+      estimatedWaitMinutes = target.estimatedWaitMinutes
+      notificationLogId = await insertWaitingNotificationLog(adminClient, { storeId, waitingId, type })
+    }
+
+    if (type === 'WAITING_CALLED') {
+      const verification = await verifyCallerCanSendForStore(req, adminClient, storeId)
+      if (!verification.ok) {
+        return new Response(
+          JSON.stringify({ error: verification.error }),
+          { status: verification.status, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
+
+      if (!storeId || !waitingId) {
+        return new Response(
+          JSON.stringify({ error: 'WAITING_CALLED는 storeId와 waitingId가 필요합니다.' }),
+          { status: 400, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
+
+      const target = await getWaitingMessageTarget(adminClient, { storeId, waitingId })
+      if (target.waitingStatus !== 'called') {
+        return new Response(
+          JSON.stringify({ error: 'WAITING_CALLED는 called 상태에서만 발송할 수 있습니다.' }),
+          { status: 409, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
+
+      resolvedTo = target.to
+      resolvedQueueNumber = target.queueNumber
+      storeName = target.storeName
+      teamsAhead = target.teamsAhead
+      estimatedWaitMinutes = target.estimatedWaitMinutes
+    }
+
+    if ((type === 'PROMOTION' || type === 'POINT_GRANTED') && !resolvedTo) {
       return new Response(
         JSON.stringify({ error: '수신 번호(to)가 필요합니다.' }),
         { status: 400, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
       )
     }
 
-    let payload: Record<string, unknown>
-    let storeName = providedStoreName
-    let teamsAhead = providedTeamsAhead
-    let estimatedWaitMinutes = providedEstimatedWaitMinutes
-    let notificationLogId: string | null = null
-
-    if ((type === 'WAITING_CREATED' || type === 'WAITING_CALLED') && adminClient && typeof queueNumber === 'number' && storeId) {
-      const context = await getWaitingNotificationContext(adminClient, { storeId, queueNumber })
-      storeName = storeName || context.storeName
-      teamsAhead = context.teamsAhead
-      estimatedWaitMinutes = context.estimatedWaitMinutes
-    }
-
-    if ((type === 'WAITING_CREATED' || type === 'WAITING_CALLED') && adminClient && storeId && waitingId) {
-      notificationLogId = await insertWaitingNotificationLog(adminClient, { storeId, waitingId, type })
+    if ((type === 'PROMOTION' || type === 'POINT_GRANTED') && storeId) {
+      const verification = await verifyCallerCanSendForStore(req, adminClient, storeId)
+      if (!verification.ok) {
+        return new Response(
+          JSON.stringify({ error: verification.error }),
+          { status: verification.status, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
     }
 
     if (type === 'POINT_GRANTED') {
       // 알림톡: 템플릿 심사 완료 후 사용. 없으면 친구톡으로 fallback.
       if (ALIMTALK_TEMPLATE_POINT) {
-        payload = buildAlimtalkPayload(to, KAKAO_CHANNEL_ID, ALIMTALK_TEMPLATE_POINT, {
+        payload = buildAlimtalkPayload(resolvedTo!, KAKAO_CHANNEL_ID, ALIMTALK_TEMPLATE_POINT, {
           '#{고객명}': customerName,
           '#{포인트}': String(points ?? 0),
         })
       } else {
         // 템플릿 미등록 시 친구톡 fallback
         payload = buildFriendtalkPayload(
-          to,
+          resolvedTo!,
           KAKAO_CHANNEL_ID,
           `${customerName}님, ${(points ?? 0).toLocaleString()}P가 적립되었습니다. 감사합니다!`,
         )
@@ -318,30 +494,30 @@ serve(async (req: Request) => {
     } else if (type === 'WAITING_CREATED') {
       const config = WAITING_MESSAGE_CONFIG.WAITING_CREATED
       payload = buildWaitingKakaoPayload(
-        to,
+        resolvedTo!,
         KAKAO_CHANNEL_ID,
         config.templateId,
         {
           '#{매장명}': storeName,
-          '#{대기번호}': String(queueNumber ?? ''),
+          '#{대기번호}': String(resolvedQueueNumber ?? ''),
           '#{앞팀수}': String(teamsAhead),
           '#{예상시간}': String(estimatedWaitMinutes),
         },
-        config.fallback(queueNumber, storeName, teamsAhead, estimatedWaitMinutes),
+        config.fallback(resolvedQueueNumber, storeName, teamsAhead, estimatedWaitMinutes),
       )
     } else if (type === 'WAITING_CALLED') {
       const config = WAITING_MESSAGE_CONFIG.WAITING_CALLED
       payload = buildWaitingKakaoPayload(
-        to,
+        resolvedTo!,
         KAKAO_CHANNEL_ID,
         config.templateId,
         {
           '#{매장명}': storeName,
-          '#{대기번호}': String(queueNumber ?? ''),
+          '#{대기번호}': String(resolvedQueueNumber ?? ''),
           '#{앞팀수}': String(teamsAhead),
           '#{예상시간}': String(estimatedWaitMinutes),
         },
-        config.fallback(queueNumber, storeName, teamsAhead, estimatedWaitMinutes),
+        config.fallback(resolvedQueueNumber, storeName, teamsAhead, estimatedWaitMinutes),
       )
     } else if (type === 'PROMOTION') {
       // PROMOTION: 친구톡 (템플릿 심사 불필요)
@@ -351,7 +527,7 @@ serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
         )
       }
-      payload = buildFriendtalkPayload(to, KAKAO_CHANNEL_ID, message)
+      payload = buildFriendtalkPayload(resolvedTo!, KAKAO_CHANNEL_ID, message)
     } else {
       return new Response(
         JSON.stringify({ error: `지원하지 않는 알림톡 타입입니다: ${type}` }),
@@ -361,7 +537,7 @@ serve(async (req: Request) => {
 
     const result = await sendViasolapi(payload, SOLAPI_API_KEY, SOLAPI_API_SECRET)
 
-    if (adminClient && notificationLogId) {
+    if (notificationLogId) {
       await updateWaitingNotificationLog(adminClient, { logId: notificationLogId, status: 'sent' })
     }
 
@@ -376,7 +552,7 @@ serve(async (req: Request) => {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')
       const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
       const event = parsedBody?.type ? toWaitingNotificationEvent(parsedBody.type) : null
-      if (supabaseUrl && serviceRoleKey && event && parsedBody?.waitingId && parsedBody?.storeId) {
+      if (supabaseUrl && serviceRoleKey && event === 'waiting_created' && parsedBody?.waitingId && parsedBody?.storeId) {
         const adminClient = createClient(supabaseUrl, serviceRoleKey, {
           auth: { autoRefreshToken: false, persistSession: false },
         })

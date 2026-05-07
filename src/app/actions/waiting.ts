@@ -63,6 +63,8 @@ async function sendWaitingAlimtalk(
     storeName: string
     teamsAhead: number
     estimatedWaitMinutes: number
+    storeId: string
+    waitingId: string
   },
 ) {
   const { data, error } = await sb.functions.invoke('send-alimtalk', { body: payload })
@@ -165,13 +167,17 @@ async function notifyWaitingAlimtalk(
 ) {
   if (!sb) return
 
+  const shouldOwnLog = type === 'WAITING_CALLED'
+
   try {
     const { storeName, teamsAhead, estimatedWaitMinutes } = await getWaitingNotificationContext(sb, waiting)
-    const notificationLogId = await insertWaitingNotificationLog(sb, {
-      waitingId: waiting.waitingId,
-      storeId: waiting.storeId,
-      type,
-    })
+    const notificationLogId = shouldOwnLog
+      ? await insertWaitingNotificationLog(sb, {
+          waitingId: waiting.waitingId,
+          storeId: waiting.storeId,
+          type,
+        })
+      : null
 
     const sendPromise = (async () => {
       try {
@@ -182,30 +188,38 @@ async function notifyWaitingAlimtalk(
           storeName,
           teamsAhead,
           estimatedWaitMinutes,
+          storeId: waiting.storeId,
+          waitingId: waiting.waitingId,
         })
 
         if (error) {
           const errorMessage = error instanceof Error ? error.message : String(error)
           console.warn('send-alimtalk failed', error)
-          await updateWaitingNotificationLog(sb, {
-            logId: notificationLogId,
-            status: 'failed',
-            errorMessage,
-          })
+          if (notificationLogId) {
+            await updateWaitingNotificationLog(sb, {
+              logId: notificationLogId,
+              status: 'failed',
+              errorMessage,
+            })
+          }
           return
         }
 
-        await updateWaitingNotificationLog(sb, {
-          logId: notificationLogId,
-          status: 'sent',
-        })
+        if (notificationLogId) {
+          await updateWaitingNotificationLog(sb, {
+            logId: notificationLogId,
+            status: 'sent',
+          })
+        }
       } catch (error) {
         console.warn('send-alimtalk failed', error)
-        await updateWaitingNotificationLog(sb, {
-          logId: notificationLogId,
-          status: 'failed',
-          errorMessage: error instanceof Error ? error.message : String(error),
-        })
+        if (notificationLogId) {
+          await updateWaitingNotificationLog(sb, {
+            logId: notificationLogId,
+            status: 'failed',
+            errorMessage: error instanceof Error ? error.message : String(error),
+          })
+        }
       }
     })()
 

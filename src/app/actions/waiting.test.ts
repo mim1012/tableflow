@@ -119,10 +119,12 @@ describe('createWaitingAction', () => {
         storeName: '테스트매장',
         teamsAhead: 4,
         estimatedWaitMinutes: 28,
+        storeId: 'store-1',
+        waitingId: '11111111-1111-4111-8111-111111111111',
       },
     })
     await Promise.resolve()
-    expect(serviceFromMock).toHaveBeenCalledWith('waiting_notifications')
+    expect(serviceFromMock).not.toHaveBeenCalledWith('waiting_notifications')
   })
 
   it('awaits WAITING_CREATED alimtalk delivery before resolving', async () => {
@@ -317,6 +319,8 @@ describe('callWaitingAction', () => {
         storeName: '테스트매장',
         teamsAhead: 2,
         estimatedWaitMinutes: 10,
+        storeId: 'store-1',
+        waitingId: 'waiting-1',
       },
     })
     expect(serviceFromMock).toHaveBeenCalledWith('waiting_notifications')
