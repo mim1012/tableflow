@@ -250,8 +250,8 @@ function WaitingQRCard({ storeSlug }: { storeSlug: string }) {
         <span className="text-xs font-bold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-full">매장 입구에 부착</span>
       </div>
       <div className="flex items-center gap-6 bg-white border border-zinc-200 rounded-2xl p-5 shadow-sm w-fit">
-        <div className="w-28 h-28 md:w-36 md:h-36 bg-white rounded-xl overflow-hidden border border-zinc-100 flex items-center justify-center shrink-0">
-          <canvas ref={canvasRef} className="w-full h-full" />
+        <div className="w-28 h-28 md:w-36 md:h-36 bg-white rounded-xl border border-zinc-100 flex items-center justify-center shrink-0">
+          <canvas ref={canvasRef} className="rounded-xl" style={{ imageRendering: 'pixelated' }} />
         </div>
         <div className="space-y-2">
           <p className="text-sm font-bold text-zinc-900">고객이 스캔하면 대기 등록</p>
