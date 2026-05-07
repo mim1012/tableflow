@@ -20,9 +20,9 @@ const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$/
 type StoreRole = 'owner' | 'manager' | 'staff'
 
 type VerifyResult =
-  | { status: 200; user: { id: string }; adminClient: ReturnType<typeof createClient> }
-  | { status: 401; user: null; adminClient: null }
-  | { status: 500; user: null; adminClient: null; message: string }
+  | { status: 200; user: { id: string; app_metadata?: Record<string, unknown> }; adminClient: ReturnType<typeof createClient>; isSuperAdmin: boolean }
+  | { status: 401; user: null; adminClient: null; isSuperAdmin: false }
+  | { status: 500; user: null; adminClient: null; isSuperAdmin: false; message: string }
 
 interface StaffMemberRow {
   id: string
@@ -35,7 +35,7 @@ interface StaffMemberRow {
 
 async function verifyCaller(authHeader: string | null): Promise<VerifyResult> {
   if (!authHeader) {
-    return { status: 401, user: null, adminClient: null }
+    return { status: 401, user: null, adminClient: null, isSuperAdmin: false }
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -43,7 +43,7 @@ async function verifyCaller(authHeader: string | null): Promise<VerifyResult> {
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
 
   if (!supabaseUrl || !serviceKey || !anonKey) {
-    return { status: 500, user: null, adminClient: null, message: 'Server configuration error.' }
+    return { status: 500, user: null, adminClient: null, isSuperAdmin: false, message: 'Server configuration error.' }
   }
 
   const adminClient = createClient(supabaseUrl, serviceKey)
@@ -57,10 +57,28 @@ async function verifyCaller(authHeader: string | null): Promise<VerifyResult> {
   } = await callerClient.auth.getUser()
 
   if (error || !user) {
-    return { status: 401, user: null, adminClient: null }
+    return { status: 401, user: null, adminClient: null, isSuperAdmin: false }
   }
 
-  return { status: 200, user, adminClient }
+  return {
+    status: 200,
+    user,
+    adminClient,
+    isSuperAdmin: user.app_metadata?.role === 'super_admin',
+  }
+}
+
+async function getRequesterAccess(
+  adminClient: ReturnType<typeof createClient>,
+  storeId: string,
+  user: { id: string; app_metadata?: Record<string, unknown> },
+  isSuperAdmin: boolean,
+) {
+  if (isSuperAdmin) {
+    return { id: `superadmin:${user.id}`, role: 'owner' as StoreRole, is_active: true }
+  }
+
+  return getRequesterMember(adminClient, storeId, user.id)
 }
 
 async function getRequesterMember(adminClient: ReturnType<typeof createClient>, storeId: string, userId: string) {
@@ -118,7 +136,7 @@ serve(async (req) => {
   if (verified.status === 500) return json({ error: verified.message }, { status: 500 }, req)
   if (verified.status === 401) return json({ error: 'Unauthorized' }, { status: 401 }, req)
 
-  const { adminClient, user } = verified
+  const { adminClient, user, isSuperAdmin } = verified
   if (!adminClient || !user) return json({ error: 'Unauthorized' }, { status: 401 }, req)
 
   const url = new URL(req.url)
@@ -129,7 +147,7 @@ serve(async (req) => {
       const storeId = url.searchParams.get('storeId')
       if (!storeId) return json({ error: 'storeId query param is required' }, { status: 400 }, req)
 
-      const requesterMember = await getRequesterMember(adminClient, storeId, user.id)
+      const requesterMember = await getRequesterAccess(adminClient, storeId, user, isSuperAdmin)
       if (!requesterMember?.is_active) return json({ error: 'Forbidden' }, { status: 403 }, req)
       if (!STAFF_CREATOR_ROLES.includes(requesterMember.role)) return json({ error: 'Forbidden' }, { status: 403 }, req)
 
@@ -184,7 +202,7 @@ serve(async (req) => {
         return json({ error: '비밀번호는 영문/숫자/특수문자를 포함한 8자 이상이어야 합니다.' }, { status: 400 }, req)
       }
 
-      const requesterMember = await getRequesterMember(adminClient, storeId, user.id)
+      const requesterMember = await getRequesterAccess(adminClient, storeId, user, isSuperAdmin)
       if (!requesterMember?.is_active) return json({ error: 'Forbidden' }, { status: 403 }, req)
       ensureCanManage(requesterMember.role, role)
 
@@ -231,7 +249,7 @@ serve(async (req) => {
     const storeId = typeof body.storeId === 'string' ? body.storeId : ''
     if (!storeId) return json({ error: 'storeId is required' }, { status: 400 }, req)
 
-    const requesterMember = await getRequesterMember(adminClient, storeId, user.id)
+    const requesterMember = await getRequesterAccess(adminClient, storeId, user, isSuperAdmin)
     if (!requesterMember?.is_active) return json({ error: 'Forbidden' }, { status: 403 }, req)
 
     if (action === 'update') {
