@@ -90,11 +90,13 @@ CREATE TABLE platform_alimtalk_templates (
 CREATE TYPE member_role AS ENUM ('owner', 'manager', 'staff');
 
 CREATE TABLE store_members (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  store_id   uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
-  user_id    uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role       member_role NOT NULL DEFAULT 'staff',
-  created_at timestamptz NOT NULL DEFAULT now(),
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id       uuid NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  user_id        uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role           member_role NOT NULL DEFAULT 'staff',
+  is_first_login boolean NOT NULL DEFAULT false,
+  is_active      boolean NOT NULL DEFAULT true,
+  created_at     timestamptz NOT NULL DEFAULT now(),
   UNIQUE (store_id, user_id)
 );
 

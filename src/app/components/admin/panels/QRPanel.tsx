@@ -272,19 +272,29 @@ function WaitingQRCard({ storeSlug }: { storeSlug: string }) {
 
 export default function QRPanel({ tables, storeSlug, onAddTable, onRenameTable, onDeleteTable }: QRPanelProps) {
   const handlePrintAll = useCallback(async () => {
-    const qrImages = await Promise.all(
-      tables.map(async (t) => {
+    const waitingUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}/waiting/${storeSlug}`
+      : `/waiting/${storeSlug}`;
+
+    const qrImages = await Promise.all([
+      ...tables.map(async (t) => {
         const u = getMenuUrl(storeSlug, t.qrToken);
         const dataUrl = await QRCode.toDataURL(u, { width: 400, margin: 2 });
         const displayName = t.name || `테이블 ${t.id}`;
-        return { displayName, url: u, dataUrl };
-      })
-    );
+        return { displayName, url: u, dataUrl, accent: '#18181b' };
+      }),
+      (async () => ({
+        displayName: '대기 접수',
+        url: waitingUrl,
+        dataUrl: await QRCode.toDataURL(waitingUrl, { width: 400, margin: 2 }),
+        accent: '#f97316',
+      }))(),
+    ]);
 
     const el = document.createElement('div');
     el.id = '__qr_print_all__';
     el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:20px;padding:24px;font-family:sans-serif">${
-      qrImages.map(q => `<div style="display:flex;flex-direction:column;align-items:center;border:1px solid #e4e4e7;border-radius:16px;padding:20px;break-inside:avoid"><h2 style="font-size:20px;margin:0 0 4px">${escapeHtml(q.displayName)}</h2><p style="font-size:11px;color:#666;margin:0 0 12px;word-break:break-all;text-align:center">${escapeHtml(q.url)}</p><img src="${q.dataUrl}" style="width:200px;height:200px" /></div>`).join('')
+      qrImages.map(q => `<div style="display:flex;flex-direction:column;align-items:center;border:1px solid #e4e4e7;border-radius:16px;padding:20px;break-inside:avoid"><h2 style="font-size:20px;margin:0 0 4px;color:${q.accent}">${escapeHtml(q.displayName)}</h2><p style="font-size:11px;color:#666;margin:0 0 12px;word-break:break-all;text-align:center">${escapeHtml(q.url)}</p><img src="${q.dataUrl}" style="width:200px;height:200px" /></div>`).join('')
     }</div>`;
     const style = document.createElement('style');
     style.id = '__qr_print_all_style__';

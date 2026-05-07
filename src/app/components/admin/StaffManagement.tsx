@@ -1,20 +1,40 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Copy, Check, Users, ShieldCheck, UserCheck } from 'lucide-react'
+import {
+  Plus,
+  Trash2,
+  Copy,
+  Check,
+  Users,
+  ShieldCheck,
+  UserCheck,
+  Pencil,
+  Eye,
+  EyeOff,
+  Lock,
+  Power,
+  RotateCcw,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'motion/react'
-import { createStaffMember, getStaffMembers, deactivateStaffMember } from '@/lib/api/staffAdmin'
-import type { StoreMemberRow, MemberRole } from '@/types/database'
+import {
+  createStaffMember,
+  getStaffMembers,
+  updateStaffMember,
+  deleteStaffMember,
+  setStaffMemberActive,
+  resetStaffPassword,
+} from '@/lib/api/staffAdmin'
+import type { MemberRole } from '@/types/database'
+import type { StaffMemberSummary } from '@/lib/api/staffAdmin'
 
 interface Props {
   storeId: string
   currentUserId: string
 }
 
-interface CreatedStaff {
-  memberId: string
-  email: string
-  role: 'manager' | 'staff'
+interface KnownPassword {
   password: string
+  revealed: boolean
 }
 
 const ROLE_LABEL: Record<MemberRole, string> = {
@@ -29,26 +49,33 @@ const ROLE_BADGE_CLASS: Record<MemberRole, string> = {
   staff: 'bg-zinc-100 text-zinc-600',
 }
 
+const EMPTY_FORM = {
+  email: '',
+  password: '',
+  name: '',
+  role: 'staff' as 'manager' | 'staff',
+}
+
 export function StaffManagement({ storeId, currentUserId }: Props) {
-  const [members, setMembers] = useState<StoreMemberRow[]>([])
+  const [members, setMembers] = useState<StaffMemberSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [editingMember, setEditingMember] = useState<StaffMemberSummary | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [createdStaffList, setCreatedStaffList] = useState<CreatedStaff[]>([])
+  const [knownPasswords, setKnownPasswords] = useState<Record<string, KnownPassword>>({})
 
-  // Form state
-  const [formEmail, setFormEmail] = useState('')
-  const [formPassword, setFormPassword] = useState('')
-  const [formName, setFormName] = useState('')
-  const [formRole, setFormRole] = useState<'manager' | 'staff'>('staff')
+  const [formEmail, setFormEmail] = useState(EMPTY_FORM.email)
+  const [formPassword, setFormPassword] = useState(EMPTY_FORM.password)
+  const [formName, setFormName] = useState(EMPTY_FORM.name)
+  const [formRole, setFormRole] = useState<'manager' | 'staff'>(EMPTY_FORM.role)
 
   const loadMembers = useCallback(async () => {
     try {
       setLoading(true)
       const data = await getStaffMembers(storeId)
       setMembers(data)
-    } catch (err) {
+    } catch {
       toast.error('직원 목록을 불러오는 데 실패했습니다.')
     } finally {
       setLoading(false)
@@ -56,57 +83,129 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
   }, [storeId])
 
   useEffect(() => {
-    loadMembers()
+    void loadMembers()
   }, [loadMembers])
 
-  function openModal() {
-    setFormEmail('')
+  function resetForm() {
+    setFormEmail(EMPTY_FORM.email)
+    setFormPassword(EMPTY_FORM.password)
+    setFormName(EMPTY_FORM.name)
+    setFormRole(EMPTY_FORM.role)
+  }
+
+  function openCreateModal() {
+    resetForm()
+    setEditingMember(null)
+    setIsCreateModalOpen(true)
+  }
+
+  function openEditModal(member: StaffMemberSummary) {
+    setEditingMember(member)
+    setFormEmail(member.email)
     setFormPassword('')
-    setFormName('')
-    setFormRole('staff')
-    setIsModalOpen(true)
+    setFormName(member.name)
+    setFormRole(member.role === 'manager' ? 'manager' : 'staff')
+    setIsCreateModalOpen(true)
+  }
+
+  function closeModal() {
+    if (submitting) return
+    setIsCreateModalOpen(false)
+    setEditingMember(null)
+    resetForm()
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (submitting) return
     setSubmitting(true)
+
     try {
-      await createStaffMember(storeId, formEmail, formPassword, formName, formRole)
-      toast.success('직원 계정이 생성됐습니다.')
-      setIsModalOpen(false)
-      const refreshed = await getStaffMembers(storeId)
-      setMembers(refreshed)
-      // Record the created staff password so owner can copy it
-      const newest = refreshed.find(
-        (m) => m.role === formRole && !createdStaffList.find((c) => c.memberId === m.id),
-      )
-      if (newest) {
-        setCreatedStaffList((prev) => [
-          { memberId: newest.id, email: formEmail, role: formRole, password: formPassword },
+      if (editingMember) {
+        const updated = await updateStaffMember({
+          storeId,
+          memberId: editingMember.id,
+          userId: editingMember.userId,
+          email: formEmail,
+          name: formName,
+          role: formRole,
+        })
+        setMembers((prev) => prev.map((member) => (member.id === updated.id ? updated : member)))
+        toast.success('직원 정보가 수정됐습니다.')
+      } else {
+        const created = await createStaffMember(storeId, formEmail, formPassword, formName, formRole)
+        await loadMembers()
+        setKnownPasswords((prev) => ({
           ...prev,
-        ])
+          [created.userId]: { password: formPassword, revealed: true },
+        }))
+        toast.success('직원 계정이 생성됐습니다.')
       }
+
+      closeModal()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '직원 생성에 실패했습니다.')
+      toast.error(err instanceof Error ? err.message : '직원 저장에 실패했습니다.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function handleDeactivate(member: StoreMemberRow) {
-    if (member.user_id === currentUserId) {
+  async function handleDelete(member: StaffMemberSummary) {
+    if (member.userId === currentUserId) {
       toast.error('자기 자신은 삭제할 수 없습니다.')
       return
     }
-    if (!confirm(`이 직원을 삭제하시겠습니까?`)) return
+    if (!confirm(`${member.name} 계정을 완전히 삭제하시겠습니까?`)) return
+
     try {
-      await deactivateStaffMember(member.id, storeId)
-      toast.success('직원이 삭제됐습니다.')
+      await deleteStaffMember({ storeId, memberId: member.id, userId: member.userId })
       setMembers((prev) => prev.filter((m) => m.id !== member.id))
-      setCreatedStaffList((prev) => prev.filter((c) => c.memberId !== member.id))
+      setKnownPasswords((prev) => {
+        const next = { ...prev }
+        delete next[member.userId]
+        return next
+      })
+      toast.success('직원 계정이 삭제됐습니다.')
     } catch (err) {
-      toast.error('직원 삭제에 실패했습니다.')
+      toast.error(err instanceof Error ? err.message : '직원 삭제에 실패했습니다.')
+    }
+  }
+
+  async function handleToggleActive(member: StaffMemberSummary) {
+    if (member.userId === currentUserId) {
+      toast.error('자기 자신은 비활성화할 수 없습니다.')
+      return
+    }
+
+    const nextActive = !member.isActive
+    const actionLabel = nextActive ? '재활성화' : '비활성화'
+    if (!confirm(`${member.name} 계정을 ${actionLabel}하시겠습니까?`)) return
+
+    try {
+      const updated = await setStaffMemberActive({
+        storeId,
+        memberId: member.id,
+        isActive: nextActive,
+      })
+      setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)))
+      toast.success(`직원 계정이 ${actionLabel}됐습니다.`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `직원 ${actionLabel}에 실패했습니다.`)
+    }
+  }
+
+  async function handleResetPassword(member: StaffMemberSummary) {
+    if (!confirm(`${member.name}의 비밀번호를 새 임시 비밀번호로 초기화할까요?`)) return
+
+    try {
+      const { tempPassword } = await resetStaffPassword(member.userId, storeId)
+      setKnownPasswords((prev) => ({
+        ...prev,
+        [member.userId]: { password: tempPassword, revealed: true },
+      }))
+      toast.success('임시 비밀번호를 새로 발급했습니다.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '비밀번호 초기화에 실패했습니다.')
     }
   }
 
@@ -115,23 +214,35 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
       await navigator.clipboard.writeText(text)
       setCopiedId(id)
       setTimeout(() => setCopiedId(null), 2000)
+      toast.success('복사되었습니다.')
     } catch {
       toast.error('복사에 실패했습니다.')
     }
   }
 
-  const createdMap = Object.fromEntries(createdStaffList.map((c) => [c.memberId, c]))
+  function togglePasswordReveal(userId: string) {
+    setKnownPasswords((prev) => {
+      const current = prev[userId]
+      if (!current) return prev
+      return {
+        ...prev,
+        [userId]: {
+          ...current,
+          revealed: !current.revealed,
+        },
+      }
+    })
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black text-zinc-900">직원 관리</h2>
-          <p className="text-sm font-medium text-zinc-500 mt-1">매장 직원 계정을 추가하고 관리합니다.</p>
+          <p className="text-sm font-medium text-zinc-500 mt-1">직원 계정 생성, 수정, 비활성화, 삭제를 한 화면에서 관리합니다.</p>
         </div>
         <button
-          onClick={openModal}
+          onClick={openCreateModal}
           className="flex items-center gap-2 px-4 py-2.5 bg-zinc-900 text-white rounded-2xl font-bold text-sm hover:bg-zinc-800 transition-colors shadow-sm"
         >
           <Plus className="w-4 h-4" />
@@ -139,12 +250,9 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
         </button>
       </div>
 
-      {/* Staff List */}
       <div className="bg-white rounded-3xl border border-zinc-200/80 overflow-hidden shadow-sm">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-zinc-400 font-bold">
-            불러오는 중...
-          </div>
+          <div className="flex items-center justify-center py-20 text-zinc-400 font-bold">불러오는 중...</div>
         ) : members.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-zinc-400">
             <Users className="w-10 h-10" />
@@ -154,19 +262,25 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
           <table className="w-full">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50/50">
-                <th className="text-left text-xs font-black text-zinc-500 uppercase tracking-wider px-6 py-4">역할</th>
+                <th className="text-left text-xs font-black text-zinc-500 uppercase tracking-wider px-6 py-4">이름</th>
                 <th className="text-left text-xs font-black text-zinc-500 uppercase tracking-wider px-6 py-4">이메일</th>
+                <th className="text-left text-xs font-black text-zinc-500 uppercase tracking-wider px-6 py-4">역할</th>
                 <th className="text-left text-xs font-black text-zinc-500 uppercase tracking-wider px-6 py-4">임시 비밀번호</th>
                 <th className="text-left text-xs font-black text-zinc-500 uppercase tracking-wider px-6 py-4">상태</th>
-                <th className="px-6 py-4"></th>
+                <th className="px-6 py-4 text-right text-xs font-black text-zinc-500 uppercase tracking-wider">관리</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {members.map((member) => {
-                const created = createdMap[member.id]
-                const isSelf = member.user_id === currentUserId
+                const passwordState = knownPasswords[member.userId]
+                const isSelf = member.userId === currentUserId
                 return (
-                  <tr key={member.id} className="hover:bg-zinc-50/50 transition-colors">
+                  <tr key={member.id} className="hover:bg-zinc-50/50 transition-colors align-top">
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-zinc-900">{member.name || '이름 없음'}</div>
+                      <div className="text-xs text-zinc-400 mt-1">생성 {new Date(member.createdAt).toLocaleDateString('ko-KR')}</div>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-zinc-700">{member.email || '—'}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black ${ROLE_BADGE_CLASS[member.role]}`}>
                         {member.role === 'owner' && <ShieldCheck className="w-3 h-3" />}
@@ -174,45 +288,89 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
                         {ROLE_LABEL[member.role]}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm font-medium text-zinc-700">
-                      {created ? created.email : '—'}
-                    </td>
                     <td className="px-6 py-4">
-                      {created ? (
-                        <button
-                          onClick={() => copyToClipboard(created.password, member.id)}
-                          className="flex items-center gap-2 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 rounded-xl text-xs font-black text-zinc-700 transition-colors"
-                        >
-                          {copiedId === member.id ? (
-                            <><Check className="w-3 h-3 text-green-600" /> 복사됨</>
-                          ) : (
-                            <><Copy className="w-3 h-3" /> 복사</>
-                          )}
-                        </button>
+                      {passwordState ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code className="px-2.5 py-1.5 rounded-xl bg-zinc-100 text-xs font-bold text-zinc-800">
+                            {passwordState.revealed ? passwordState.password : '••••••••'}
+                          </code>
+                          <button
+                            type="button"
+                            aria-label={passwordState.revealed ? '비밀번호 숨기기' : '비밀번호 보기'}
+                            onClick={() => togglePasswordReveal(member.userId)}
+                            className="p-2 rounded-xl bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors"
+                          >
+                            {passwordState.revealed ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="비밀번호 복사"
+                            onClick={() => copyToClipboard(passwordState.password, member.userId)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 rounded-xl text-xs font-black text-zinc-700 transition-colors"
+                          >
+                            {copiedId === member.userId ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                            {copiedId === member.userId ? '복사됨' : '복사'}
+                          </button>
+                        </div>
                       ) : (
-                        <span className="text-xs text-zinc-400 font-medium">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      {member.is_first_login ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-black border border-amber-200/50">
-                          첫 로그인 전
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-50 text-green-700 rounded-full text-xs font-black border border-green-200/50">
-                          활성
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {!isSelf && member.role !== 'owner' && (
                         <button
-                          onClick={() => handleDeactivate(member)}
-                          className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                          type="button"
+                          aria-label="비밀번호 초기화"
+                          onClick={() => void handleResetPassword(member)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 rounded-xl text-xs font-black hover:bg-amber-100 transition-colors"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Lock className="w-3.5 h-3.5" /> 비밀번호 초기화
                         </button>
                       )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col items-start gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black border ${
+                            member.isActive
+                              ? 'bg-green-50 text-green-700 border-green-200/50'
+                              : 'bg-zinc-100 text-zinc-500 border-zinc-200'
+                          }`}
+                        >
+                          {member.isActive ? '활성' : '비활성'}
+                        </span>
+                        {member.isFirstLogin && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-black border border-amber-200/50">
+                            첫 로그인 전
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          aria-label="수정"
+                          onClick={() => openEditModal(member)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-100 text-zinc-700 text-xs font-black hover:bg-zinc-200 transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" /> 수정
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={member.isActive ? '비활성화' : '재활성화'}
+                          onClick={() => void handleToggleActive(member)}
+                          disabled={isSelf || member.role === 'owner'}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-100 text-zinc-700 text-xs font-black hover:bg-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {member.isActive ? <Power className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                          {member.isActive ? '비활성화' : '재활성화'}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="삭제"
+                          onClick={() => void handleDelete(member)}
+                          disabled={isSelf || member.role === 'owner'}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 text-red-600 text-xs font-black hover:bg-red-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> 삭제
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -222,16 +380,15 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
         )}
       </div>
 
-      {/* Add Staff Modal */}
       <AnimatePresence>
-        {isModalOpen && (
+        {isCreateModalOpen && (
           <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm"
-              onClick={() => !submitting && setIsModalOpen(false)}
+              onClick={closeModal}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 40 }}
@@ -241,11 +398,13 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
             >
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h2 className="text-xl font-extrabold text-zinc-900">직원 추가</h2>
-                  <p className="text-sm font-medium text-zinc-500 mt-0.5">새 직원 계정을 생성합니다.</p>
+                  <h2 className="text-xl font-extrabold text-zinc-900">{editingMember ? '직원 수정' : '직원 추가'}</h2>
+                  <p className="text-sm font-medium text-zinc-500 mt-0.5">
+                    {editingMember ? '이름, 이메일, 역할을 수정합니다.' : '새 직원 계정을 생성합니다.'}
+                  </p>
                 </div>
                 <button
-                  onClick={() => !submitting && setIsModalOpen(false)}
+                  onClick={closeModal}
                   className="p-2 text-zinc-400 hover:text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-full transition-colors"
                 >
                   <Plus className="w-5 h-5 rotate-45" />
@@ -277,18 +436,20 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-zinc-900 mb-1.5">임시 비밀번호</label>
-                  <input
-                    required
-                    type="text"
-                    value={formPassword}
-                    onChange={(e) => setFormPassword(e.target.value)}
-                    placeholder="특수문자 포함 8자 이상"
-                    className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm font-medium text-zinc-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all"
-                  />
-                  <p className="text-xs text-zinc-400 font-medium mt-1.5">직원이 첫 로그인 후 비밀번호를 변경해야 합니다.</p>
-                </div>
+                {!editingMember && (
+                  <div>
+                    <label className="block text-sm font-bold text-zinc-900 mb-1.5">임시 비밀번호</label>
+                    <input
+                      required
+                      type="text"
+                      value={formPassword}
+                      onChange={(e) => setFormPassword(e.target.value)}
+                      placeholder="특수문자 포함 8자 이상"
+                      className="w-full border border-zinc-200 rounded-xl px-4 py-3 text-sm font-medium text-zinc-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all"
+                    />
+                    <p className="text-xs text-zinc-400 font-medium mt-1.5">직원이 첫 로그인 후 비밀번호를 변경해야 합니다.</p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-bold text-zinc-900 mb-1.5">역할</label>
@@ -314,7 +475,7 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
                 <div className="flex gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={() => !submitting && setIsModalOpen(false)}
+                    onClick={closeModal}
                     className="flex-1 py-4 bg-zinc-100 text-zinc-700 font-bold rounded-2xl hover:bg-zinc-200 transition-colors"
                   >
                     취소
@@ -324,7 +485,7 @@ export function StaffManagement({ storeId, currentUserId }: Props) {
                     disabled={submitting}
                     className="flex-[2] py-4 bg-zinc-900 text-white font-bold rounded-2xl hover:bg-zinc-800 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.12)] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {submitting ? '생성 중...' : '직원 추가'}
+                    {submitting ? '저장 중...' : editingMember ? '수정 저장' : '직원 추가'}
                   </button>
                 </div>
               </form>

@@ -109,6 +109,8 @@ platform_alimtalk_templates  ← 플랫폼 전역 (store 무관)
 | store_id | uuid FK → stores | |
 | user_id | uuid FK → auth.users | |
 | role | member_role | owner \| manager \| staff |
+| is_first_login | boolean | 첫 로그인 후 비밀번호 변경 필요 여부 |
+| is_active | boolean | 직원 계정 활성/비활성 상태 |
 | created_at | timestamptz | |
 
 > UNIQUE(store_id, user_id)

@@ -1,9 +1,70 @@
 import { supabase } from '@/lib/supabase'
-import type { MemberRole, StoreMemberRow } from '@/types/database'
+import { SUPABASE_URL, SUPABASE_ANON_KEY as ANON_KEY } from '@/lib/env'
 
-// ============================================================
-// Create staff member via Edge Function
-// ============================================================
+const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1`
+
+function assertAuthConfig() {
+  if (!SUPABASE_URL || !ANON_KEY) {
+    throw new Error('Supabase 환경 변수가 누락되었습니다.')
+  }
+}
+
+async function callStaffAdmin<T>(action: string, body?: unknown, query?: Record<string, string>): Promise<T> {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession()
+
+  if (sessionError || !session) {
+    throw new Error('로그인이 필요합니다.')
+  }
+
+  assertAuthConfig()
+
+  const params = new URLSearchParams({ action, ...(query ?? {}) })
+  const url = `${EDGE_FUNCTION_URL}/staff-admin?${params.toString()}`
+  const res = await fetch(url, {
+    method: body ? 'POST' : 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: ANON_KEY,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+
+  let json: any
+  try {
+    json = await res.json()
+  } catch {
+    throw new Error(`서버 응답 오류 (HTTP ${res.status})`)
+  }
+
+  if (!res.ok) {
+    throw new Error(json.error ?? json.message ?? `요청 실패 (${res.status})`)
+  }
+
+  return json as T
+}
+
+export interface StaffMemberSummary {
+  id: string
+  userId: string
+  email: string
+  name: string
+  role: 'owner' | 'manager' | 'staff'
+  isFirstLogin: boolean
+  isActive: boolean
+  createdAt: string
+}
+
+export interface CreateStaffMemberResult {
+  userId: string
+  storeId: string
+  role: 'manager' | 'staff'
+  name: string
+  email: string
+}
 
 export async function createStaffMember(
   storeId: string,
@@ -11,53 +72,47 @@ export async function createStaffMember(
   password: string,
   name: string,
   role: 'manager' | 'staff',
-): Promise<void> {
-  // getSession() reads from cookies without a network call (avoids refreshSession() hang with split client instances)
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-  if (sessionError || !session) throw new Error('인증 세션이 없습니다.')
-
-  const { SUPABASE_URL: supabaseUrl, SUPABASE_ANON_KEY: anonKey } = await import('@/lib/env')
-  const res = await fetch(`${supabaseUrl}/functions/v1/create-staff`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
-      apikey: anonKey,
-    },
-    body: JSON.stringify({ storeId, email, password, name, role }),
+): Promise<CreateStaffMemberResult> {
+  return callStaffAdmin<CreateStaffMemberResult>('create', {
+    storeId,
+    email,
+    password,
+    name,
+    role,
   })
-
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error ?? data.message ?? `직원 생성 실패 (HTTP ${res.status})`)
-  }
 }
 
-// ============================================================
-// Get staff members
-// ============================================================
-
-export async function getStaffMembers(storeId: string): Promise<StoreMemberRow[]> {
-  const { data, error } = await supabase
-    .from('store_members')
-    .select('*')
-    .eq('store_id', storeId)
-    .order('created_at', { ascending: true })
-
-  if (error) throw error
-  return data ?? []
+export async function getStaffMembers(storeId: string): Promise<StaffMemberSummary[]> {
+  return callStaffAdmin<StaffMemberSummary[]>('list', undefined, { storeId })
 }
 
-// ============================================================
-// Deactivate (delete) staff member
-// ============================================================
+export async function updateStaffMember(params: {
+  storeId: string
+  memberId: string
+  userId: string
+  email: string
+  name: string
+  role: 'manager' | 'staff'
+}): Promise<StaffMemberSummary> {
+  return callStaffAdmin<StaffMemberSummary>('update', params)
+}
 
-export async function deactivateStaffMember(memberId: string, storeId: string): Promise<void> {
-  const { error } = await supabase
-    .from('store_members')
-    .delete()
-    .eq('id', memberId)
-    .eq('store_id', storeId)
+export async function resetStaffPassword(userId: string, storeId: string): Promise<{ tempPassword: string }> {
+  return callStaffAdmin<{ tempPassword: string }>('reset-password', { userId, storeId })
+}
 
-  if (error) throw error
+export async function setStaffMemberActive(params: {
+  storeId: string
+  memberId: string
+  isActive: boolean
+}): Promise<StaffMemberSummary> {
+  return callStaffAdmin<StaffMemberSummary>('set-active', params)
+}
+
+export async function deleteStaffMember(params: {
+  storeId: string
+  memberId: string
+  userId: string
+}): Promise<void> {
+  await callStaffAdmin<{ success: true }>('delete', params)
 }

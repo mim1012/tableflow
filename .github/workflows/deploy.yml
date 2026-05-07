@@ -58,6 +58,7 @@ jobs:
         run: |
           supabase functions deploy create-store-with-owner --no-verify-jwt
           supabase functions deploy create-staff --no-verify-jwt
+          supabase functions deploy staff-admin --no-verify-jwt
           supabase functions deploy check-superadmin --no-verify-jwt
           supabase functions deploy superadmin --no-verify-jwt
           supabase functions deploy send-alimtalk --no-verify-jwt

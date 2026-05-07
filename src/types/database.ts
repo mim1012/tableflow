@@ -169,6 +169,7 @@ export interface StoreMemberRow {
   user_id: string
   role: MemberRole
   is_first_login: boolean
+  is_active: boolean
   created_at: string
 }
 
@@ -178,6 +179,7 @@ export interface StoreMemberInsert {
   user_id: string
   role?: MemberRole
   is_first_login?: boolean
+  is_active?: boolean
   created_at?: string
 }
 
@@ -188,6 +190,7 @@ export interface StoreMemberUpdate {
   role?: MemberRole
   created_at?: string
   is_first_login?: boolean
+  is_active?: boolean
 }
 
 // ------------------------------------------------------------

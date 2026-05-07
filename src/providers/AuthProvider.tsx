@@ -41,7 +41,7 @@ export function NextAuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data, error } = await supabase
       .from('store_members')
-      .select('role, store_id, is_first_login, stores(name)')
+      .select('role, store_id, is_first_login, is_active, stores(name)')
       .eq('user_id', supabaseUserId)
       .single()
 
@@ -51,8 +51,11 @@ export function NextAuthProvider({ children }: { children: React.ReactNode }) {
       role: string
       store_id: string
       is_first_login: boolean | null
+      is_active: boolean | null
       stores: { name?: string } | null
     }
+
+    if (row.is_active === false) return null
 
     const storeUserFirstLogin = row.is_first_login ?? false
     setIsFirstLogin(storeUserFirstLogin)
