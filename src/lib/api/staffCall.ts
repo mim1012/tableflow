@@ -42,6 +42,7 @@ export async function resolveStaffCall(staffCallId: string): Promise<void> {
       resolved_at: new Date().toISOString(),
     })
     .eq('id', staffCallId)
+    .eq('status', 'pending')
 
   if (error) throw new Error(error.message)
 }

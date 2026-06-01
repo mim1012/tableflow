@@ -71,5 +71,6 @@ describe('staffCall API', () => {
       resolved_at: expect.any(String),
     }))
     expect(query.eq).toHaveBeenCalledWith('id', 'sc-1')
+    expect(query.eq).toHaveBeenCalledWith('status', 'pending')
   })
 })

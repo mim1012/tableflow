@@ -78,14 +78,15 @@ test.describe('직원 호출 prod-safe E2E', () => {
 
     try {
       await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_PASSWORD)
-      await page.waitForLoadState('networkidle')
+      await expect(page.getByRole('button', { name: /웨이팅 관리/ })).toBeVisible({ timeout: 15000 })
 
       await clickSidebarButton(page, /웨이팅/)
       await expect(page.getByRole('heading', { name: '웨이팅 관리' })).toBeVisible({ timeout: 10000 })
       await expect(page.locator('body')).toContainText(optionName, { timeout: 10000 })
       await expect(page.locator('body')).toContainText(`${table.table_number}번 테이블`, { timeout: 10000 })
 
-      await page.getByTestId('staff-call-resolve').click()
+      const matchingCard = page.locator('[data-testid="staff-call-resolve"]').locator('..').locator('..').filter({ hasText: optionName }).first()
+      await matchingCard.getByTestId('staff-call-resolve').click()
       await expect(page.locator('body')).not.toContainText(optionName, { timeout: 10000 })
 
       const verifyRes = await serviceRoleFetch(
