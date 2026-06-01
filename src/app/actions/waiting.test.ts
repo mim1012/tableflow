@@ -41,7 +41,7 @@ function makeUpdateChain(result: { data: { id: string } | null; error: { message
   return { update, eq: chain.eq, in: chain.in, select: chain.select, single }
 }
 
-function makeInsertChain(result: { data: { id: string } | null; error: { message: string } | null }) {
+function makeInsertChain(result: { data: { id: string } | null; error: { message: string; code?: string } | null }) {
   const single = vi.fn().mockResolvedValue(result)
   const select = vi.fn().mockReturnValue({ single })
   const insert = vi.fn().mockReturnValue({ select })
@@ -324,6 +324,37 @@ describe('callWaitingAction', () => {
       },
     })
     expect(serviceFromMock).toHaveBeenCalledWith('waiting_notifications')
+  })
+
+  it('skips WAITING_CALLED alimtalk when duplicate notification ledger row already exists', async () => {
+    serverFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({
+          data: { phone: '01099990000', queue_number: 12, store_id: 'store-1', status: 'waiting' },
+          error: null,
+        }) as any,
+      )
+      .mockReturnValueOnce(
+        makeUpdateChain({ data: { id: 'waiting-1' }, error: null }) as any,
+      )
+
+    serviceFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 5 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: null, count: 2, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeInsertChain({ data: null, error: { message: 'duplicate key value violates unique constraint', code: '23505' } }) as any,
+      )
+
+    await expect(callWaitingAction('waiting-1')).resolves.toBeUndefined()
+
+    expect(functionsInvokeMock).not.toHaveBeenCalled()
   })
 
   it('does not send alimtalk when phone is missing', async () => {

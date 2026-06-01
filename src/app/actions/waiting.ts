@@ -75,10 +75,14 @@ function toWaitingNotificationEvent(type: WaitingAlimtalkType): WaitingNotificat
   return type === 'WAITING_CREATED' ? 'waiting_created' : 'waiting_called'
 }
 
+function isDuplicateNotificationError(error: { code?: string; message?: string } | null | undefined) {
+  return error?.code === '23505' || error?.message?.toLowerCase().includes('duplicate key') === true
+}
+
 async function insertWaitingNotificationLog(
   sb: any,
   params: { waitingId: string; storeId: string; type: WaitingAlimtalkType },
-) {
+): Promise<string | null> {
   const { data, error } = await sb
     .from('waiting_notifications')
     .insert({
@@ -91,8 +95,15 @@ async function insertWaitingNotificationLog(
     .select('id')
     .single()
 
-  if (error || !data?.id) {
-    throw new Error(error?.message ?? 'waiting notification log insert failed')
+  if (error) {
+    if (isDuplicateNotificationError(error)) {
+      return null
+    }
+    throw new Error(error.message ?? 'waiting notification log insert failed')
+  }
+
+  if (!data?.id) {
+    throw new Error('waiting notification log insert failed')
   }
 
   return data.id as string
@@ -178,6 +189,10 @@ async function notifyWaitingAlimtalk(
           type,
         })
       : null
+
+    if (shouldOwnLog && !notificationLogId) {
+      return
+    }
 
     const sendPromise = (async () => {
       try {

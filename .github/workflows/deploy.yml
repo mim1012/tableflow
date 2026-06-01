@@ -31,7 +31,6 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
@@ -45,10 +44,9 @@ jobs:
 
   # 3. Edge Functions 배포 (main push만, 실패해도 워크플로우 계속)
   deploy-functions:
-    needs: build
+    needs: [build, migrate]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
