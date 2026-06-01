@@ -2,10 +2,12 @@ import { test, expect } from '@playwright/test'
 import {
   SUPERADMIN_EMAIL,
   SUPERADMIN_PASSWORD,
+  clickSidebarButton,
   completePasswordChange,
   deleteStoresWithTestTag,
   deleteStoreBySlug,
   fillDateRange,
+  getServiceRoleHeaders,
   markStoreTestData,
   login,
   loginAndWaitForAdmin,
@@ -32,6 +34,8 @@ const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().
 
 type StoreRow = { id: string }
 type WaitingRow = { id: string; phone: string; party_size: number; queue_number: number; status: string }
+type TableRow = { id: string; table_number: number }
+type StaffCallVerifyRow = { id: string; status: string; resolved_at: string | null; option_name: string }
 
 let storeId = ''
 
@@ -288,6 +292,61 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     expect(secondSaved?.queueNumber).toBeGreaterThan(firstSaved.queueNumber)
   })
 
+
+  test('SC-027B: 관리자 웨이팅 패널 — 직원 호출 확인 및 처리 완료', async ({ page }) => {
+    expect(storeId).toBeTruthy()
+
+    const serviceHeaders = getServiceRoleHeaders()
+    test.skip(!serviceHeaders, 'SUPABASE_SERVICE_ROLE_KEY 미설정')
+
+    await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
+    await page.waitForLoadState('networkidle')
+
+    const tableRows = await supabaseGet<TableRow>(
+      page,
+      `tables?select=id,table_number&store_id=eq.${storeId}&order=table_number.asc&limit=1`,
+    )
+    expect(tableRows.length, '직원 호출을 연결할 테이블이 필요합니다.').toBeGreaterThan(0)
+
+    const table = tableRows[0]
+    const optionName = '물티슈 주세요'
+    const { url } = getSupabaseConfig()
+
+    const insertRes = await fetch(`${url}/rest/v1/staff_calls`, {
+      method: 'POST',
+      headers: { ...serviceHeaders!, Prefer: 'return=representation' },
+      body: JSON.stringify({
+        store_id: storeId,
+        table_id: table.id,
+        option_name: optionName,
+        status: 'pending',
+      }),
+    })
+    expect(insertRes.ok, `staff_calls seed 실패: ${insertRes.status}`).toBeTruthy()
+
+    const insertedRows = (await insertRes.json()) as StaffCallVerifyRow[]
+    expect(insertedRows.length).toBeGreaterThan(0)
+    const staffCallId = insertedRows[0].id
+
+    await clickSidebarButton(page, /웨이팅/)
+    await expect(page.getByRole('heading', { name: '웨이팅 관리' })).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('body')).toContainText(optionName, { timeout: 10000 })
+    await expect(page.locator('body')).toContainText(`${table.table_number}번 테이블`, { timeout: 10000 })
+
+    await page.getByTestId('staff-call-resolve').click()
+    await expect(page.locator('body')).not.toContainText(optionName, { timeout: 10000 })
+
+    const verifyRes = await fetch(
+      `${url}/rest/v1/staff_calls?select=id,status,resolved_at,option_name&id=eq.${staffCallId}&limit=1`,
+      { headers: serviceHeaders! },
+    )
+    expect(verifyRes.ok, `staff_calls verify 실패: ${verifyRes.status}`).toBeTruthy()
+
+    const verifiedRows = (await verifyRes.json()) as StaffCallVerifyRow[]
+    expect(verifiedRows.length).toBeGreaterThan(0)
+    expect(verifiedRows[0].status).toBe('resolved')
+    expect(verifiedRows[0].resolved_at).toBeTruthy()
+  })
 
   test.afterAll(async () => {
     await deleteStoresWithTestTag()

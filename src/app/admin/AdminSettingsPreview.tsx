@@ -48,6 +48,7 @@ export default function AdminSettingsPreview() {
           <SettingsPanel
             staffCallOptions={staffCallOptions}
             setStaffCallOptions={setStaffCallOptions}
+            isStaffCallOptionsSaving={false}
             waitingMinutesPerTeam={waitingMinutesPerTeam}
             setWaitingMinutesPerTeam={setWaitingMinutesPerTeam}
             isWaitingMinutesLoading={false}

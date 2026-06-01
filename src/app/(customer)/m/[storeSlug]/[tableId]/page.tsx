@@ -5,6 +5,7 @@ import { isStoreSubscriptionActive } from '@/lib/utils/subscription'
 import CustomerMenuClient from './CustomerMenuClient'
 import type { StoreRow, TableRow, MenuCategoryRow, MenuItemRow, OptionGroupRow, OptionChoiceRow } from '@/types/database'
 import type { MenuItem } from './CustomerMenuClient'
+import { normalizeStaffCallOptionNames } from './staffCallOptions'
 
 interface Props {
   params: Promise<{ storeSlug: string; tableId: string }>
@@ -50,14 +51,19 @@ export default async function CustomerMenuPage({ params }: Props) {
   }
 
   // Fetch table, categories, items in parallel
-  const [tableResult, categoriesResult, itemsResult] = await Promise.all([
+  const [tableResult, categoriesResult, itemsResult, staffCallOptionsResult] = await Promise.all([
     supabase.from('tables').select('*').eq('store_id', storeData.id).eq('qr_token', tableId).single(),
     supabase.from('menu_categories').select('*').eq('store_id', storeData.id).order('sort_order', { ascending: true }),
     supabase.from('menu_items').select('*').eq('store_id', storeData.id).eq('is_available', true).eq('is_deleted', false).order('sort_order', { ascending: true }),
+    (supabase as any).rpc('get_staff_call_options', { p_store_id: storeData.id }),
   ])
 
   const tableData = tableResult.data as TableRow | null
   if (tableResult.error || !tableData) notFound()
+
+  const staffCallOptionNames = normalizeStaffCallOptionNames(
+    (staffCallOptionsResult.data as string[] | null) ?? [],
+  )
 
   const categories: MenuCategoryRow[] = categoriesResult.data ?? []
   const itemRows: MenuItemRow[] = (itemsResult.data ?? []) as MenuItemRow[]
@@ -115,6 +121,7 @@ export default async function CustomerMenuPage({ params }: Props) {
       table={tableData}
       categories={categories}
       items={menuItems}
+      staffCallOptionNames={staffCallOptionNames}
     />
   )
 }

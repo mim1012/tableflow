@@ -32,6 +32,7 @@ Playwright end-to-end test suites covering all critical user flows across three 
 ### Working In This Directory
 - Always import helpers from `./e2e-helpers` — do not duplicate login logic.
 - Required env vars: `TEST_SUPERADMIN_EMAIL`, `TEST_SUPERADMIN_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`.
+- For the focused prod-safe staff-call spec (`staff-call-prod-safe.spec.ts`), use existing-store envs instead: `TEST_OWNER_EMAIL`, `TEST_OWNER_PASSWORD`, `TEST_STORE_SLUG`, plus `SUPABASE_SERVICE_ROLE_KEY` and the normal Supabase public envs.
 - Use `requireEnv()` to fail fast when env vars are missing.
 - Tests use `page.waitForSelector()` / `page.waitForURL()` — avoid fixed sleeps.
 - Timeout: 90 seconds per test. Retry: 1. On failure: screenshots + video + trace saved automatically.

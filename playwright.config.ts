@@ -17,10 +17,13 @@ try {
   }
 } catch { /* .env 없으면 무시 */ }
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000'
+const shouldStartLocalWebServer = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(baseURL)
+
 export default defineConfig({
   testDir: './e2e',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     headless: true,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
@@ -79,10 +82,12 @@ export default defineConfig({
       testMatch: ['**/order-flow.spec.ts', '**/staff.spec.ts'],
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: true,
-    timeout: 30_000,
-  },
+  webServer: shouldStartLocalWebServer
+    ? {
+        command: 'npm run dev',
+        url: baseURL,
+        reuseExistingServer: true,
+        timeout: 30_000,
+      }
+    : undefined,
 })

@@ -6,7 +6,7 @@
  * - 권한 요청은 최초 1회 (사용자 인터랙션 필요)
  */
 
-type StaffAlertToneKind = 'new-order' | 'confirmed' | 'preparing' | 'ready' | 'served' | 'cancelled'
+type StaffAlertToneKind = 'new-order' | 'confirmed' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'staff-call'
 
 type OrderStatus = 'confirmed' | 'preparing' | 'ready' | 'served' | 'cancelled'
 
@@ -27,6 +27,7 @@ const TONE_PRESETS: Record<StaffAlertToneKind, { notes: number[]; duration: numb
   ready: { notes: [988, 1319], duration: 0.13, gap: 0.05, gain: 0.05, waveform: 'square' },
   served: { notes: [622], duration: 0.12, gap: 0.04, gain: 0.025, waveform: 'sine' },
   cancelled: { notes: [392, 330], duration: 0.14, gap: 0.05, gain: 0.04, waveform: 'sawtooth' },
+  'staff-call': { notes: [784, 988, 784], duration: 0.12, gap: 0.05, gain: 0.045, waveform: 'triangle' },
 }
 
 let staffAudioContext: AudioContext | null = null
@@ -88,6 +89,12 @@ export function notifyOrderStatusChanged(tableLabel: string, orderId: string, st
   if (meta) {
     void playStaffAlertSound(meta.tone)
   }
+}
+
+export function notifyStaffCall(tableLabel: string, optionName: string, staffCallId?: string) {
+  notifyIfBackground(`직원 호출 — ${tableLabel}`, optionName, staffCallId)
+  vibrate([180, 70, 180])
+  void playStaffAlertSound('staff-call')
 }
 
 export async function playStaffAlertSound(kind: StaffAlertToneKind) {

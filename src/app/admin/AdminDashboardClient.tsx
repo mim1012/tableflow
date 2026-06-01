@@ -19,14 +19,16 @@ import { fetchCustomers, fetchStorePointEvents, grantPoints, createCustomerByPho
 import type { OrderStats, TopMenuItem, CategorySales } from '@/lib/api/admin'
 import { createOrder } from '@/lib/api/order'
 import { completeWaiting as apiCompleteWaiting } from '@/lib/api/waiting'
-import { getStoreSettings, updateStoreWaitingMinutesPerTeam } from '@/lib/api/storeSettings'
+import { getStoreSettings, updateStoreStaffCallOptions, updateStoreWaitingMinutesPerTeam } from '@/lib/api/storeSettings'
+import { resolveStaffCall as apiResolveStaffCall } from '@/lib/api/staffCall'
 import { callWaitingAction } from '@/app/actions/waiting'
 
-import { primeStaffAlertAudio, isStaffAlertSoundEnabled, setStaffAlertSoundEnabled } from '@/hooks/useOrderNotification'
+import { notifyStaffCall, primeStaffAlertAudio, isStaffAlertSoundEnabled, setStaffAlertSoundEnabled } from '@/hooks/useOrderNotification'
 import { useOrders } from '@/hooks/useOrders'
 import { useRealtimeTables } from '@/hooks/useRealtimeTables'
 import { useMenuAdmin } from '@/hooks/useMenuAdmin'
 import { applyWaitingOverrides, clearConfirmedWaitingOverrides, useWaitingQueue } from '@/hooks/useWaitingQueue'
+import { useStaffCalls } from '@/hooks/useStaffCalls'
 import type { WaitingOverrideStatus } from '@/hooks/useWaitingQueue'
 import { useNotificationPermission } from '@/hooks/useNotificationPermission'
 
@@ -59,6 +61,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import type { EventSettings, PointEvent } from '@/app/components/admin/panels/EventPanel'
 import type { Customer } from '@/app/components/admin/panels/CustomersPanel'
 import type { StaffCallOption } from '@/app/components/admin/panels/SettingsPanel'
+import { normalizeStaffCallOptionNames } from '@/lib/staffCallOptions'
 
 function toUICustomer(c: {
   id: string; name: string; profileImage?: string | null; phone?: string | null;
@@ -87,10 +90,15 @@ export default function AdminDashboardClient() {
   // --- Notification permission ---
   const { showBanner, dismissBanner, requestPermission } = useNotificationPermission()
   const [staffAlertSoundEnabled, setStaffAlertSoundEnabledState] = useState(true)
+  const [hasHydratedStaffCalls, setHasHydratedStaffCalls] = useState(false)
 
   useEffect(() => {
     setStaffAlertSoundEnabledState(isStaffAlertSoundEnabled())
   }, [])
+
+  useEffect(() => {
+    setHasHydratedStaffCalls(false)
+  }, [storeId])
 
   useEffect(() => {
     const requestOnce = () => {
@@ -135,6 +143,7 @@ export default function AdminDashboardClient() {
   } = useMenuAdmin(storeId || null)
 
   const { waitings: rawWaitings } = useWaitingQueue(storeId || null)
+  const { staffCalls: rawStaffCalls } = useStaffCalls(storeId || null)
 
   // --- Lookup maps ---
   const tableNumberMap = useMemo(() => {
@@ -248,10 +257,54 @@ export default function AdminDashboardClient() {
   // Waitings: keep optimistic status moves until Realtime confirms them
   const [waitingStatusOverrides, setWaitingStatusOverrides] = useState<Map<string, WaitingOverrideStatus>>(new Map())
   const waitings = useMemo(() => applyWaitingOverrides(rawWaitings, waitingStatusOverrides), [rawWaitings, waitingStatusOverrides])
+  const [resolvedStaffCallIds, setResolvedStaffCallIds] = useState<Set<string>>(new Set())
+  const staffCalls = useMemo(
+    () => rawStaffCalls.filter((staffCall) => !resolvedStaffCallIds.has(staffCall.id)),
+    [rawStaffCalls, resolvedStaffCallIds],
+  )
 
   useEffect(() => {
     setWaitingStatusOverrides((prev) => clearConfirmedWaitingOverrides(prev, rawWaitings))
   }, [rawWaitings])
+
+  useEffect(() => {
+    setResolvedStaffCallIds((prev) => {
+      if (prev.size === 0) return prev
+      const pendingIds = new Set(rawStaffCalls.map((staffCall) => staffCall.id))
+      const next = new Set(Array.from(prev).filter((staffCallId) => pendingIds.has(staffCallId)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [rawStaffCalls])
+
+  const getStaffCallTableLabel = React.useCallback((tableId: string | null) => {
+    if (!tableId) return '테이블 미지정'
+    const tableNumber = tableNumberMap.get(tableId)
+    return tableNumber ? `${tableNumber}번 테이블` : '알 수 없는 테이블'
+  }, [tableNumberMap])
+
+  const [seenStaffCallIds, setSeenStaffCallIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!hasHydratedStaffCalls) {
+      setSeenStaffCallIds(new Set(rawStaffCalls.map((staffCall) => staffCall.id)))
+      setHasHydratedStaffCalls(true)
+      return
+    }
+
+    if (rawStaffCalls.length === 0) return
+
+    setSeenStaffCallIds((prev) => {
+      const next = new Set(prev)
+      const newlyArrived = rawStaffCalls.filter((staffCall) => !next.has(staffCall.id))
+
+      newlyArrived.forEach((staffCall) => {
+        notifyStaffCall(getStaffCallTableLabel(staffCall.table_id), staffCall.option_name, staffCall.id)
+        next.add(staffCall.id)
+      })
+
+      return newlyArrived.length === 0 ? prev : next
+    })
+  }, [rawStaffCalls, getStaffCallTableLabel, hasHydratedStaffCalls])
 
   // --- App mode / tab ---
   const [appMode, setAppMode] = useState<'pos' | 'admin'>('pos')
@@ -444,6 +497,16 @@ export default function AdminDashboardClient() {
     }
   }
 
+  const resolveStaffCall = async (staffCallId: string, optionName: string) => {
+    try {
+      await apiResolveStaffCall(staffCallId)
+      setResolvedStaffCallIds((prev) => new Set(prev).add(staffCallId))
+      toast.success(`직원 호출 처리 완료: ${optionName}`)
+    } catch {
+      toast.error('직원 호출 처리 완료에 실패했습니다.')
+    }
+  }
+
   // --- Menu handlers ---
   const toggleMenuStock = (id: string) => {
     const menu = menus.find((m) => m.id === id)
@@ -614,6 +677,7 @@ export default function AdminDashboardClient() {
   const [waitingMinutesPerTeam, setWaitingMinutesPerTeam] = useState(5)
   const [isWaitingMinutesLoading, setIsWaitingMinutesLoading] = useState(false)
   const [isWaitingMinutesSaving, setIsWaitingMinutesSaving] = useState(false)
+  const [isStaffCallOptionsSaving, setIsStaffCallOptionsSaving] = useState(false)
 
   useEffect(() => {
     if (!storeId) return
@@ -622,28 +686,50 @@ export default function AdminDashboardClient() {
     getStoreSettings(storeId)
       .then((settings) => {
         setWaitingMinutesPerTeam(settings?.waiting_minutes_per_team ?? 5)
+        setStaffCallOptions(
+          normalizeStaffCallOptionNames(settings?.staff_call_options).map((name, index) => ({ id: index + 1, name })),
+        )
       })
       .catch(() => {
-        toast.error('웨이팅 예상시간 설정을 불러오지 못했습니다.')
+        toast.error('웨이팅/직원 호출 설정을 불러오지 못했습니다.')
       })
       .finally(() => {
         setIsWaitingMinutesLoading(false)
       })
   }, [storeId])
 
+  const saveStaffCallOptions = async (optionNames: string[]) => {
+    if (!storeId) return
+
+    const normalizedOptionNames = normalizeStaffCallOptionNames(optionNames)
+    setIsStaffCallOptionsSaving(true)
+
+    try {
+      const saved = await updateStoreStaffCallOptions(storeId, normalizedOptionNames)
+      setStaffCallOptions(
+        normalizeStaffCallOptionNames(saved.staff_call_options).map((name, index) => ({ id: index + 1, name })),
+      )
+      toast.success('직원 호출 옵션이 저장되었습니다.')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '직원 호출 옵션 저장에 실패했습니다.')
+    } finally {
+      setIsStaffCallOptionsSaving(false)
+    }
+  }
+
   const handleAddCallOption = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    const newName = formData.get('name') as string
+    const newName = (formData.get('name') as string | null)?.trim()
     if (!newName) return
-    setStaffCallOptions((prev) => [...prev, { id: Date.now(), name: newName }])
+    const nextNames = normalizeStaffCallOptionNames([...staffCallOptions.map((option) => option.name), newName])
+    void saveStaffCallOptions(nextNames)
     e.currentTarget.reset()
-    toast.success('직원 호출 옵션이 추가되었습니다.')
   }
 
   const handleRemoveCallOption = (id: number) => {
-    setStaffCallOptions((prev) => prev.filter((opt) => opt.id !== id))
-    toast.success('직원 호출 옵션이 삭제되었습니다.')
+    const nextNames = staffCallOptions.filter((opt) => opt.id !== id).map((opt) => opt.name)
+    void saveStaffCallOptions(nextNames)
   }
 
   const handleSaveWaitingMinutesPerTeam = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1071,8 +1157,11 @@ export default function AdminDashboardClient() {
               <motion.div key="waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <WaitingPanel
                   waitings={waitings}
+                  staffCalls={staffCalls}
                   callWaiting={callWaiting}
                   completeWaiting={completeWaiting}
+                  resolveStaffCall={resolveStaffCall}
+                  getStaffCallTableLabel={getStaffCallTableLabel}
                   onOpenKioskMode={() => {}}
                 />
               </motion.div>
@@ -1160,6 +1249,7 @@ export default function AdminDashboardClient() {
                 <SettingsPanel
                   staffCallOptions={staffCallOptions}
                   setStaffCallOptions={setStaffCallOptions}
+                  isStaffCallOptionsSaving={isStaffCallOptionsSaving}
                   waitingMinutesPerTeam={waitingMinutesPerTeam}
                   setWaitingMinutesPerTeam={setWaitingMinutesPerTeam}
                   isWaitingMinutesLoading={isWaitingMinutesLoading}

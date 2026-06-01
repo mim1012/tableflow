@@ -3,6 +3,7 @@ import {
   requestNotificationPermission,
   notifyNewOrder,
   notifyOrderStatusChanged,
+  notifyStaffCall,
   __resetStaffAlertAudioContextForTests,
 } from './useOrderNotification'
 
@@ -37,6 +38,27 @@ const sharedAudioContext = new MockAudioContext()
 const audioContextCtor = vi.fn(function MockAudioContextCtor() {
   return sharedAudioContext as unknown as AudioContext
 })
+
+function installLocalStorageMock() {
+  const store = new Map<string, string>()
+
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: vi.fn((key: string) => store.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        store.set(key, String(value))
+      }),
+      removeItem: vi.fn((key: string) => {
+        store.delete(key)
+      }),
+      clear: vi.fn(() => {
+        store.clear()
+      }),
+    },
+    writable: true,
+    configurable: true,
+  })
+}
 
 describe('requestNotificationPermission', () => {
   const originalNotification = globalThis.Notification
@@ -97,6 +119,7 @@ describe('notifyNewOrder', () => {
   let vibrateSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    installLocalStorageMock()
     localStorage.clear()
     __resetStaffAlertAudioContextForTests()
     sharedAudioContext.createOscillator.mockClear()
@@ -175,7 +198,11 @@ describe('notifyOrderStatusChanged', () => {
   let vibrateSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
+    installLocalStorageMock()
     __resetStaffAlertAudioContextForTests()
+    sharedAudioContext.createOscillator.mockClear()
+    sharedAudioContext.createGain.mockClear()
+    audioContextCtor.mockClear()
     notificationSpy = vi.fn()
     Object.defineProperty(globalThis, 'Notification', {
       value: Object.assign(notificationSpy, { permission: 'granted' }),
@@ -185,6 +212,11 @@ describe('notifyOrderStatusChanged', () => {
     vibrateSpy = vi.fn()
     Object.defineProperty(navigator, 'vibrate', {
       value: vibrateSpy,
+      writable: true,
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, 'AudioContext', {
+      value: audioContextCtor,
       writable: true,
       configurable: true,
     })
@@ -224,5 +256,52 @@ describe('notifyOrderStatusChanged', () => {
       'custom-status — T1',
       expect.any(Object),
     )
+  })
+})
+
+describe('notifyStaffCall', () => {
+  let notificationSpy: ReturnType<typeof vi.fn>
+  let vibrateSpy: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    installLocalStorageMock()
+    localStorage.clear()
+    __resetStaffAlertAudioContextForTests()
+    sharedAudioContext.createOscillator.mockClear()
+    sharedAudioContext.createGain.mockClear()
+    audioContextCtor.mockClear()
+    notificationSpy = vi.fn()
+    Object.defineProperty(globalThis, 'Notification', {
+      value: Object.assign(notificationSpy, { permission: 'granted' }),
+      writable: true,
+      configurable: true,
+    })
+    vibrateSpy = vi.fn()
+    Object.defineProperty(navigator, 'vibrate', {
+      value: vibrateSpy,
+      writable: true,
+      configurable: true,
+    })
+    Object.defineProperty(globalThis, 'AudioContext', {
+      value: audioContextCtor,
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  it('plays alert sound and background notification for staff calls', async () => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+
+    notifyStaffCall('3번 테이블', '물티슈 주세요', 'sc-1')
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(notificationSpy).toHaveBeenCalledWith(
+      '직원 호출 — 3번 테이블',
+      expect.objectContaining({ body: '물티슈 주세요' }),
+    )
+    expect(vibrateSpy).toHaveBeenCalledWith([180, 70, 180])
+    expect(sharedAudioContext.createOscillator).toHaveBeenCalled()
   })
 })

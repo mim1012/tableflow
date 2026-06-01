@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Users, Volume2, Check } from 'lucide-react';
+import { Users, Volume2, Check, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { minutesAgo } from '../types';
-import type { WaitingStatus } from '@/types/database';
+import type { StaffCallRow, WaitingStatus } from '@/types/database';
 
 interface WaitingEntry {
   id: string;
@@ -17,8 +17,11 @@ interface WaitingEntry {
 
 interface WaitingPanelProps {
   waitings: WaitingEntry[];
+  staffCalls: StaffCallRow[];
   callWaiting: (waitingId: string, queueNumber: number) => Promise<void>;
   completeWaiting: (waitingId: string, queueNumber: number) => Promise<void>;
+  resolveStaffCall: (staffCallId: string, optionName: string) => Promise<void>;
+  getStaffCallTableLabel: (tableId: string | null) => string;
   onOpenKioskMode: () => void;
 }
 
@@ -77,8 +80,11 @@ function WaitingList({
 
 export default function WaitingPanel({
   waitings,
+  staffCalls,
   callWaiting,
   completeWaiting,
+  resolveStaffCall,
+  getStaffCallTableLabel,
   onOpenKioskMode,
 }: WaitingPanelProps) {
   const waitingEntries = waitings.filter((waiting) => waiting.status === 'waiting')
@@ -89,11 +95,52 @@ export default function WaitingPanel({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
         <div>
           <h2 className="text-xl md:text-2xl font-black text-zinc-900">웨이팅 관리</h2>
-          <p className="text-xs md:text-sm text-zinc-500 mt-0.5 md:mt-1">대기중 고객은 호출하고, 호출된 고객은 입장을 완료하세요.</p>
+          <p className="text-xs md:text-sm text-zinc-500 mt-0.5 md:mt-1">직원 호출은 바로 처리하고, 대기중 고객은 호출한 뒤 입장 완료까지 이어서 관리하세요.</p>
         </div>
         <button onClick={onOpenKioskMode} className="bg-orange-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-orange-600 transition-colors shadow-sm self-start md:self-auto">
           웨이팅 기기 모드 띄우기
         </button>
+      </div>
+
+      <div className="bg-white rounded-2xl md:rounded-3xl border border-zinc-200 overflow-hidden shadow-sm">
+        <div className="bg-zinc-50 border-b border-zinc-200 px-6 py-4 flex items-center justify-between">
+          <span className="font-extrabold text-zinc-800 flex items-center gap-2">
+            <Bell className="w-4 h-4 text-orange-500" /> 직원 호출 <span className="text-orange-500">{staffCalls.length}</span>건
+          </span>
+        </div>
+
+        {staffCalls.length === 0 ? (
+          <div className="p-12 text-center text-zinc-500 font-medium">
+            현재 처리할 직원 호출이 없습니다.
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            <AnimatePresence>
+              {staffCalls.map((staffCall) => (
+                <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, x: -50 }} key={staffCall.id} className="p-4 md:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-zinc-50/50 transition-colors">
+                  <div className="flex items-start gap-4 md:gap-6 w-full md:w-auto">
+                    <div className="w-12 h-12 md:w-16 md:h-16 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center shrink-0">
+                      <Bell className="w-5 h-5 md:w-6 md:h-6" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-3 mb-1">
+                        <h4 className="font-black text-lg md:text-xl text-zinc-900">{staffCall.option_name}</h4>
+                        <span className="bg-zinc-100 text-zinc-600 text-xs font-bold px-2 py-1 rounded-md">{minutesAgo(staffCall.requested_at)}분 전 접수</span>
+                      </div>
+                      <p className="text-sm font-bold text-zinc-500">{getStaffCallTableLabel(staffCall.table_id)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
+                    <button data-testid="staff-call-resolve" onClick={() => void resolveStaffCall(staffCall.id, staffCall.option_name)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-zinc-900 text-white px-6 py-3 md:py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-colors shadow-md">
+                      <Check className="w-4 h-4" /> 처리 완료
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
       <WaitingList
@@ -102,7 +149,7 @@ export default function WaitingPanel({
         emptyMessage="현재 대기중인 고객이 없습니다."
         entries={waitingEntries}
         renderAction={(waiting) => (
-          <button data-testid="waiting-call" onClick={() => callWaiting(waiting.id, waiting.queue_number)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 px-4 py-3 md:py-2.5 rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors">
+          <button data-testid="waiting-call" onClick={() => void callWaiting(waiting.id, waiting.queue_number)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 px-4 py-3 md:py-2.5 rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors">
             <Volume2 className="w-4 h-4" /> 호출하기
           </button>
         )}
@@ -114,7 +161,7 @@ export default function WaitingPanel({
         emptyMessage="현재 호출 후 입장 대기중인 고객이 없습니다."
         entries={calledEntries}
         renderAction={(waiting) => (
-          <button data-testid="waiting-seat" onClick={() => completeWaiting(waiting.id, waiting.queue_number)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-zinc-900 text-white px-6 py-3 md:py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-colors shadow-md">
+          <button data-testid="waiting-seat" onClick={() => void completeWaiting(waiting.id, waiting.queue_number)} className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-zinc-900 text-white px-6 py-3 md:py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-colors shadow-md">
             <Check className="w-4 h-4" /> 입장 완료
           </button>
         )}

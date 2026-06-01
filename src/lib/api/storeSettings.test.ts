@@ -8,7 +8,7 @@ vi.mock('@/lib/supabase', () => ({
 }))
 
 import { supabase } from '@/lib/supabase'
-import { getStoreSettings, updateStoreWaitingMinutesPerTeam } from './storeSettings'
+import { getStoreSettings, updateStoreStaffCallOptions, updateStoreWaitingMinutesPerTeam } from './storeSettings'
 
 describe('storeSettings API', () => {
   beforeEach(() => {
@@ -21,6 +21,7 @@ describe('storeSettings API', () => {
       kakao_receiver_phone: null,
       alimtalk_enabled: true,
       waiting_minutes_per_team: 7,
+      staff_call_options: ['직원만 호출', '물티슈 주세요'],
     }
 
     vi.mocked(supabase.from).mockReturnValue(
@@ -43,6 +44,25 @@ describe('storeSettings API', () => {
 
     await expect(updateStoreWaitingMinutesPerTeam('store-1', 9)).resolves.toEqual(updated)
     expect(supabase.from).toHaveBeenCalledWith('store_settings')
+  })
+
+  it('updates and normalizes staff call options', async () => {
+    const updated = {
+      store_id: 'store-1',
+      staff_call_options: ['직원만 호출', '물티슈 주세요'],
+    }
+
+    const query = createQueryMock({ data: updated, error: null }) as any
+    vi.mocked(supabase.from).mockReturnValue(query)
+
+    await expect(
+      updateStoreStaffCallOptions('store-1', [' 직원만 호출 ', '', '물티슈 주세요', '직원만 호출']),
+    ).resolves.toEqual(updated)
+
+    expect(query.upsert).toHaveBeenCalledWith({
+      store_id: 'store-1',
+      staff_call_options: ['직원만 호출', '물티슈 주세요'],
+    }, { onConflict: 'store_id' })
   })
 
   it('throws when updating fails', async () => {

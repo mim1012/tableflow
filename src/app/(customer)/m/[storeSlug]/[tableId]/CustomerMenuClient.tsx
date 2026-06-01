@@ -1,12 +1,14 @@
 'use client'
 
-import React, { useState } from 'react'
-import { ShoppingBag, ChevronLeft, Plus, Minus, X, Receipt, Utensils, Coffee, LayoutGrid, Droplets, Star, Gift, ChevronRight } from 'lucide-react'
+import React, { useMemo, useState } from 'react'
+import { ShoppingBag, ChevronLeft, Plus, Minus, X, Receipt, Utensils, Coffee, LayoutGrid, Droplets, Star, Gift, ChevronRight, Bell } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { createStaffCall } from '@/lib/api/staffCall'
 import type { StoreRow, TableRow, MenuCategoryRow, SelectedOption } from '@/types/database'
 import { getSafeMenuImageSrc } from '../../../ui-helpers'
+import { normalizeStaffCallOptionNames } from './staffCallOptions'
 
 export interface MenuItemOption {
   name: string
@@ -30,6 +32,7 @@ interface Props {
   table: TableRow
   categories: MenuCategoryRow[]
   items: MenuItem[]
+  staffCallOptionNames?: string[]
 }
 
 const CATEGORY_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -58,7 +61,7 @@ type OrderHistoryEntry = {
   status: string
 }
 
-export default function CustomerMenuClient({ store, table, categories, items }: Props) {
+export default function CustomerMenuClient({ store, table, categories, items, staffCallOptionNames = [] }: Props) {
   const storeSlug = store.slug
   const tableId = table.id
   const orderHistoryKey = `order-history:${storeSlug}:${table.qr_token}`
@@ -70,6 +73,8 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false)
   const [isEventOpen, setIsEventOpen] = useState(false)
+  const [isStaffCallOpen, setIsStaffCallOpen] = useState(false)
+  const [isSubmittingStaffCall, setIsSubmittingStaffCall] = useState(false)
 
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
   const [selectedOptions, setSelectedOptions] = useState<{ [key: string]: string }>({})
@@ -79,6 +84,11 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
   const [showSplash, setShowSplash] = useState(true)
   const [showOrderConfirm, setShowOrderConfirm] = useState(false)
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({})
+
+  const normalizedStaffCallOptionNames = useMemo(
+    () => normalizeStaffCallOptionNames(staffCallOptionNames),
+    [staffCallOptionNames],
+  )
 
   React.useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 1200)
@@ -289,6 +299,28 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
     }
   }
 
+  const handleStaffCall = async (optionName: string) => {
+    if (isSubmittingStaffCall) return
+
+    setIsSubmittingStaffCall(true)
+    try {
+      await createStaffCall({
+        storeId: store.id,
+        tableId: table.id,
+        optionName,
+      })
+
+      setIsStaffCallOpen(false)
+      toast.success('직원 호출이 접수되었어요.', {
+        description: `${tableDisplayName} · ${optionName}`,
+      })
+    } catch {
+      toast.error('직원 호출 접수에 실패했습니다. 다시 시도해주세요.')
+    } finally {
+      setIsSubmittingStaffCall(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-900 sm:bg-zinc-100 flex justify-center pb-0 sm:pb-28 font-sans">
       <div className="w-full max-w-md bg-zinc-50 min-h-[100dvh] sm:min-h-screen sm:shadow-[0_0_40px_rgba(0,0,0,0.1)] relative overflow-hidden flex flex-col sm:rounded-[40px] sm:mt-10 sm:border-8 sm:border-zinc-800">
@@ -389,10 +421,28 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
             </div>
           </div>
 
-          <div className="px-4 pt-3">
+          <div className="grid grid-cols-2 gap-3 px-4 pt-3">
+            <button
+              onClick={() => setIsStaffCallOpen(true)}
+              className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-left text-zinc-800 transition active:scale-[0.99]"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-700 shadow-sm">
+                    <Bell className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-500">호출</p>
+                    <h4 className="text-sm font-extrabold leading-tight">직원 호출</h4>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400" />
+              </div>
+            </button>
+
             <button
               onClick={() => setIsEventOpen(true)}
-              className="w-full rounded-2xl border border-orange-100 bg-orange-50/80 px-4 py-3 text-left text-zinc-800 transition active:scale-[0.99]"
+              className="rounded-2xl border border-orange-100 bg-orange-50/80 px-4 py-3 text-left text-zinc-800 transition active:scale-[0.99]"
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -610,6 +660,40 @@ export default function CustomerMenuClient({ store, table, categories, items }: 
                       <><ShoppingBag className="w-6 h-6" /> 주문하기</>
                     )}
                   </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* Staff Call Modal */}
+        <AnimatePresence>
+          {isStaffCallOpen && (
+            <>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsStaffCallOpen(false)} className="absolute inset-0 bg-black/60 z-50 backdrop-blur-sm" />
+              <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[32px] z-50 flex flex-col shadow-2xl overflow-hidden">
+                <div className="p-6 bg-white border-b border-zinc-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-400">{tableDisplayName}</p>
+                      <h2 className="mt-1 text-2xl font-extrabold text-zinc-900">직원 호출</h2>
+                      <p className="mt-2 text-sm font-medium text-zinc-500">필요한 항목을 선택하면 직원에게 바로 전달할 수 있도록 준비할게요.</p>
+                    </div>
+                    <button onClick={() => setIsStaffCallOpen(false)} className="bg-zinc-100 hover:bg-zinc-200 p-2.5 rounded-full transition-colors"><X className="w-5 h-5 text-zinc-600" /></button>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-zinc-50 space-y-3 pb-safe">
+                  {normalizedStaffCallOptionNames.map((optionName) => (
+                    <button
+                      key={optionName}
+                      onClick={() => void handleStaffCall(optionName)}
+                      disabled={isSubmittingStaffCall}
+                      className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-4 text-left font-bold text-zinc-900 shadow-sm transition hover:border-orange-200 hover:bg-orange-50/40 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {optionName}
+                    </button>
+                  ))}
                 </div>
               </motion.div>
             </>

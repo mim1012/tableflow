@@ -97,6 +97,7 @@ export interface StoreSettingsRow {
   kakao_receiver_phone: string | null
   alimtalk_enabled: boolean
   waiting_minutes_per_team: number
+  staff_call_options: string[] | null
 }
 
 export interface StoreSettingsInsert {
@@ -105,6 +106,7 @@ export interface StoreSettingsInsert {
   kakao_receiver_phone?: string | null
   alimtalk_enabled?: boolean
   waiting_minutes_per_team?: number
+  staff_call_options?: string[] | null
 }
 
 export interface StoreSettingsUpdate {
@@ -113,6 +115,7 @@ export interface StoreSettingsUpdate {
   kakao_receiver_phone?: string | null
   alimtalk_enabled?: boolean
   waiting_minutes_per_team?: number
+  staff_call_options?: string[] | null
 }
 
 // ------------------------------------------------------------
@@ -462,6 +465,40 @@ export interface OrderItemUpdate {
 
 // ------------------------------------------------------------
 
+export type StaffCallStatus = 'pending' | 'resolved'
+
+export interface StaffCallRow {
+  id: string
+  store_id: string
+  table_id: string | null
+  option_name: string
+  status: StaffCallStatus
+  requested_at: string
+  resolved_at: string | null
+}
+
+export interface StaffCallInsert {
+  id?: string
+  store_id: string
+  table_id?: string | null
+  option_name: string
+  status?: StaffCallStatus
+  requested_at?: string
+  resolved_at?: string | null
+}
+
+export interface StaffCallUpdate {
+  id?: string
+  store_id?: string
+  table_id?: string | null
+  option_name?: string
+  status?: StaffCallStatus
+  requested_at?: string
+  resolved_at?: string | null
+}
+
+// ------------------------------------------------------------
+
 export interface WaitingRow {
   id: string
   store_id: string
@@ -714,6 +751,12 @@ export interface Database {
         Update: OrderItemUpdate
         Relationships: never[]
       }
+      staff_calls: {
+        Row: StaffCallRow
+        Insert: StaffCallInsert
+        Update: StaffCallUpdate
+        Relationships: never[]
+      }
       waitings: {
         Row: WaitingRow
         Insert: WaitingInsert
@@ -769,6 +812,20 @@ export interface Database {
           p_payment_method?: PaymentMethod | null
         }
         Returns: string
+      }
+      create_staff_call: {
+        Args: {
+          p_store_id: string
+          p_table_id: string
+          p_option_name: string
+        }
+        Returns: string
+      }
+      get_staff_call_options: {
+        Args: {
+          p_store_id: string
+        }
+        Returns: string[]
       }
       add_table_atomic: {
         Args: { p_store_id: string }

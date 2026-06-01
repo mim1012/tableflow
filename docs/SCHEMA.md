@@ -21,6 +21,7 @@ auth.users
           │                 └── option_choices
           ├── orders
           │     └── order_items
+          ├── staff_calls
           └── waitings
                 └── waiting_notifications
 
@@ -72,6 +73,7 @@ platform_alimtalk_templates  ← 플랫폼 전역 (store 무관)
 | kakao_receiver_phone | text | |
 | alimtalk_enabled | bool DEFAULT false | |
 | waiting_minutes_per_team | int DEFAULT 5 | 웨이팅 예상시간 계산용 기본 1팀 처리시간(분) |
+| staff_call_options | text[] | 고객 QR 주문화면의 직원 호출 옵션 목록 |
 
 > 카카오 채널/키는 플랫폼 환경변수 중앙 관리
 
@@ -187,6 +189,23 @@ created → confirmed → preparing → ready → served
 | quantity | int NOT NULL | |
 | total_price | int NOT NULL | |
 | selected_options | jsonb | 옵션 스냅샷 |
+
+---
+
+### staff_calls — 직원 호출 요청
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| id | uuid PK | |
+| store_id | uuid FK → stores | |
+| table_id | uuid FK → tables (SET NULL) | 호출이 발생한 테이블 |
+| option_name | text NOT NULL | 고객이 선택한 호출 항목 |
+| status | text DEFAULT 'pending' | pending \| resolved |
+| requested_at | timestamptz | 호출 접수 시각 |
+| resolved_at | timestamptz | 처리 완료 시각 |
+
+> 고객 QR 화면은 `get_staff_call_options(store_id)` RPC로 호출 가능한 옵션 목록을 읽고, `create_staff_call(store_id, table_id, option_name)` RPC로만 기록한다. 옵션명은 `store_settings.staff_call_options` 또는 기본 옵션 목록으로 검증한다.
+> 관리자 웨이팅 패널의 실시간 직원호출 카드는 `public.staff_calls`의 Realtime publication 의존.
 
 ---
 

@@ -12,6 +12,7 @@ export interface StaffCallOption {
 interface SettingsPanelProps {
   staffCallOptions: StaffCallOption[];
   setStaffCallOptions: React.Dispatch<React.SetStateAction<StaffCallOption[]>>;
+  isStaffCallOptionsSaving: boolean;
   waitingMinutesPerTeam: number;
   setWaitingMinutesPerTeam: React.Dispatch<React.SetStateAction<number>>;
   isWaitingMinutesLoading: boolean;
@@ -29,6 +30,7 @@ interface SettingsPanelProps {
 
 export default function SettingsPanel({
   staffCallOptions,
+  isStaffCallOptionsSaving,
   waitingMinutesPerTeam,
   setWaitingMinutesPerTeam,
   isWaitingMinutesLoading,
@@ -96,6 +98,7 @@ export default function SettingsPanel({
               <span className="font-bold text-zinc-800">{opt.name}</span>
               <button
                 onClick={() => handleRemoveCallOption(opt.id)}
+                disabled={isStaffCallOptionsSaving}
                 className="text-zinc-400 hover:text-red-500 p-1.5 hover:bg-red-50 rounded-lg transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -110,13 +113,15 @@ export default function SettingsPanel({
             name="name"
             placeholder="예: 물티슈 주세요, 앞치마 주세요"
             required
+            disabled={isStaffCallOptionsSaving}
             className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm font-medium text-zinc-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 transition-all"
           />
           <button
             type="submit"
+            disabled={isStaffCallOptionsSaving}
             className="bg-zinc-900 text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-colors shadow-sm flex items-center gap-1.5 shrink-0"
           >
-            <Plus className="w-4 h-4" /> 추가
+            <Plus className="w-4 h-4" /> {isStaffCallOptionsSaving ? '저장 중...' : '추가'}
           </button>
         </form>
       </div>
