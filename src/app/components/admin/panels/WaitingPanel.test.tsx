@@ -40,14 +40,30 @@ describe('WaitingPanel', () => {
             resolved_at: null,
           },
         ] as any}
+        failedNotifications={[
+          {
+            id: 'wn1',
+            waitingId: 'w1',
+            event: 'waiting_created',
+            createdAt: '2026-05-05T10:12:00.000Z',
+            errorMessage: 'provider down',
+            queueNumber: 1,
+            phone: '01012345678',
+            waitingStatus: 'waiting',
+            retryable: true,
+          },
+        ] as any}
         callWaiting={noop}
         completeWaiting={noop}
         resolveStaffCall={noop}
+        retryWaitingNotification={noop}
         getStaffCallTableLabel={getStaffCallTableLabel}
         onOpenKioskMode={() => {}}
       />,
     )
 
+    expect(screen.getByText(/알림 재시도 필요/)).toBeInTheDocument()
+    expect(screen.getAllByTestId('waiting-notification-retry')).toHaveLength(1)
     expect(screen.getAllByText(/직원 호출/).length).toBeGreaterThan(0)
     expect(screen.getAllByTestId('staff-call-resolve')).toHaveLength(1)
     expect(screen.getByText(/현재 대기/)).toBeInTheDocument()

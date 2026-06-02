@@ -138,6 +138,42 @@ type WaitingNotificationContext = {
   estimatedWaitMinutes: number
 }
 
+export type FailedWaitingNotification = {
+  id: string
+  waitingId: string
+  event: WaitingNotificationEvent
+  createdAt: string
+  errorMessage: string | null
+  queueNumber: number | null
+  phone: string | null
+  waitingStatus: WaitingStatus | null
+  retryable: boolean
+}
+
+type WaitingNotificationLedgerRow = {
+  id: string
+  waiting_id: string
+  store_id: string
+  event: WaitingNotificationEvent
+  status: 'pending' | 'sent' | 'failed'
+  error_msg: string | null
+  created_at: string
+}
+
+type WaitingNotificationWaitingRow = {
+  id: string
+  queue_number: number
+  phone: string | null
+  status: WaitingStatus
+}
+
+function canRetryWaitingNotification(event: WaitingNotificationEvent, waitingStatus: WaitingStatus | null, phone: string | null) {
+  if (!phone) return false
+  if (event === 'waiting_created') return waitingStatus === 'waiting'
+  if (event === 'waiting_called') return waitingStatus === 'called'
+  return false
+}
+
 async function getWaitingNotificationContext(
   sb: any,
   waiting: { storeId: string; queueNumber: number },
@@ -168,6 +204,136 @@ async function getWaitingNotificationContext(
     teamsAhead,
     estimatedWaitMinutes: waitingMinutesPerTeam * teamsAhead,
   }
+}
+
+export async function listFailedWaitingNotificationsAction(storeId: string): Promise<FailedWaitingNotification[]> {
+  if (!storeId) return []
+
+  const supabase = await createClient()
+  const sb = supabase as any
+
+  const { data: logs, error: logsError } = await sb
+    .from('waiting_notifications')
+    .select('id, waiting_id, store_id, event, status, error_msg, created_at')
+    .eq('store_id', storeId)
+    .eq('status', 'failed')
+    .in('event', ['waiting_created', 'waiting_called'])
+
+  if (logsError) {
+    throw new Error(logsError.message)
+  }
+
+  const typedLogs = (logs ?? []) as WaitingNotificationLedgerRow[]
+  if (typedLogs.length === 0) return []
+
+  const waitingIds = Array.from(new Set(typedLogs.map((log) => log.waiting_id)))
+  const { data: waitings, error: waitingsError } = await sb
+    .from('waitings')
+    .select('id, queue_number, phone, status')
+    .in('id', waitingIds)
+
+  if (waitingsError) {
+    throw new Error(waitingsError.message)
+  }
+
+  const waitingMap = new Map(
+    ((waitings ?? []) as WaitingNotificationWaitingRow[]).map((waiting) => [waiting.id, waiting]),
+  )
+
+  return typedLogs
+    .map((log) => {
+      const waiting = waitingMap.get(log.waiting_id)
+      return {
+        id: log.id,
+        waitingId: log.waiting_id,
+        event: log.event,
+        createdAt: log.created_at,
+        errorMessage: log.error_msg,
+        queueNumber: waiting?.queue_number ?? null,
+        phone: waiting?.phone ?? null,
+        waitingStatus: waiting?.status ?? null,
+        retryable: canRetryWaitingNotification(log.event, waiting?.status ?? null, waiting?.phone ?? null),
+      }
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+export async function retryWaitingNotificationAction(notificationId: string): Promise<{ success: boolean; message?: string }> {
+  const supabase = await createClient()
+  const sb = supabase as any
+  const serviceClient = getServiceClient()
+  const actionClient = serviceClient ?? sb
+
+  const { data: log, error: logError } = await sb
+    .from('waiting_notifications')
+    .select('id, waiting_id, store_id, event, status, error_msg, created_at')
+    .eq('id', notificationId)
+    .maybeSingle()
+
+  if (logError) {
+    throw new Error(logError.message)
+  }
+
+  const typedLog = log as WaitingNotificationLedgerRow | null
+  if (!typedLog) {
+    return { success: false, message: '알림 이력을 찾을 수 없습니다.' }
+  }
+
+  const { data: waiting, error: waitingError } = await sb
+    .from('waitings')
+    .select('id, queue_number, phone, status')
+    .eq('id', typedLog.waiting_id)
+    .maybeSingle()
+
+  if (waitingError) {
+    throw new Error(waitingError.message)
+  }
+
+  const typedWaiting = waiting as WaitingNotificationWaitingRow | null
+  const retryable = canRetryWaitingNotification(typedLog.event, typedWaiting?.status ?? null, typedWaiting?.phone ?? null)
+
+  if (!typedWaiting || !retryable) {
+    const message = typedWaiting?.phone
+      ? '현재 상태에서는 이 알림을 재시도할 수 없습니다.'
+      : '전화번호가 없어 알림을 재시도할 수 없습니다.'
+
+    await updateWaitingNotificationLog(actionClient, {
+      logId: typedLog.id,
+      status: 'failed',
+      errorMessage: message,
+    })
+
+    return { success: false, message }
+  }
+
+  const { storeName, teamsAhead, estimatedWaitMinutes } = await getWaitingNotificationContext(actionClient, {
+    storeId: typedLog.store_id,
+    queueNumber: typedWaiting.queue_number,
+  })
+
+  const type = typedLog.event === 'waiting_created' ? 'WAITING_CREATED' : 'WAITING_CALLED'
+  const { error } = await sendWaitingAlimtalk(actionClient, {
+    to: typedWaiting.phone,
+    type,
+    queueNumber: typedWaiting.queue_number,
+    storeName,
+    teamsAhead,
+    estimatedWaitMinutes,
+    storeId: typedLog.store_id,
+    waitingId: typedLog.waiting_id,
+  })
+
+  if (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    await updateWaitingNotificationLog(actionClient, {
+      logId: typedLog.id,
+      status: 'failed',
+      errorMessage,
+    })
+    return { success: false, message: errorMessage }
+  }
+
+  return { success: true }
 }
 
 async function notifyWaitingAlimtalk(

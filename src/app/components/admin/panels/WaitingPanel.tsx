@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Users, Volume2, Check, Bell } from 'lucide-react';
+import { Users, Volume2, Check, Bell, AlertTriangle, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { minutesAgo } from '../types';
 import type { StaffCallRow, WaitingStatus } from '@/types/database';
@@ -15,12 +15,26 @@ interface WaitingEntry {
   status: WaitingStatus;
 }
 
+interface FailedWaitingNotificationEntry {
+  id: string;
+  waitingId: string;
+  event: 'waiting_created' | 'waiting_called';
+  createdAt: string;
+  errorMessage: string | null;
+  queueNumber: number | null;
+  phone: string | null;
+  waitingStatus: WaitingStatus | null;
+  retryable: boolean;
+}
+
 interface WaitingPanelProps {
   waitings: WaitingEntry[];
   staffCalls: StaffCallRow[];
+  failedNotifications: FailedWaitingNotificationEntry[];
   callWaiting: (waitingId: string, queueNumber: number) => Promise<void>;
   completeWaiting: (waitingId: string, queueNumber: number) => Promise<void>;
   resolveStaffCall: (staffCallId: string, optionName: string) => Promise<void>;
+  retryWaitingNotification: (notificationId: string) => Promise<void>;
   getStaffCallTableLabel: (tableId: string | null) => string;
   onOpenKioskMode: () => void;
 }
@@ -81,9 +95,11 @@ function WaitingList({
 export default function WaitingPanel({
   waitings,
   staffCalls,
+  failedNotifications,
   callWaiting,
   completeWaiting,
   resolveStaffCall,
+  retryWaitingNotification,
   getStaffCallTableLabel,
   onOpenKioskMode,
 }: WaitingPanelProps) {
@@ -100,6 +116,57 @@ export default function WaitingPanel({
         <button onClick={onOpenKioskMode} className="bg-orange-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-orange-600 transition-colors shadow-sm self-start md:self-auto">
           웨이팅 기기 모드 띄우기
         </button>
+      </div>
+
+      <div className="bg-white rounded-2xl md:rounded-3xl border border-zinc-200 overflow-hidden shadow-sm">
+        <div className="bg-red-50 border-b border-red-100 px-6 py-4 flex items-center justify-between">
+          <span className="font-extrabold text-zinc-800 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500" /> 알림 재시도 필요 <span className="text-red-500">{failedNotifications.length}</span>건
+          </span>
+        </div>
+
+        {failedNotifications.length === 0 ? (
+          <div className="p-12 text-center text-zinc-500 font-medium">
+            전송 실패한 웨이팅 알림이 없습니다.
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-100">
+            <AnimatePresence>
+              {failedNotifications.map((notification) => (
+                <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, x: -50 }} key={notification.id} className="p-4 md:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-zinc-50/50 transition-colors">
+                  <div className="flex items-start gap-4 md:gap-6 w-full md:w-auto">
+                    <div className="w-12 h-12 md:w-16 md:h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-5 h-5 md:w-6 md:h-6" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h4 className="font-black text-lg md:text-xl text-zinc-900">
+                          {notification.event === 'waiting_created' ? '대기 등록 알림 실패' : '입장 호출 알림 실패'}
+                        </h4>
+                        <span className="bg-zinc-100 text-zinc-600 text-xs font-bold px-2 py-1 rounded-md">{minutesAgo(notification.createdAt)}분 전 실패</span>
+                      </div>
+                      <p className="text-sm font-bold text-zinc-600">
+                        대기번호 {notification.queueNumber ?? '-'} · 전화번호 {notification.phone ?? '-'}
+                      </p>
+                      <p className="text-sm text-red-600 break-all">{notification.errorMessage ?? '알 수 없는 오류'}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
+                    <button
+                      data-testid="waiting-notification-retry"
+                      disabled={!notification.retryable}
+                      onClick={() => void retryWaitingNotification(notification.id)}
+                      className="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-zinc-900 text-white px-6 py-3 md:py-2.5 rounded-xl font-bold text-sm hover:bg-zinc-800 transition-colors shadow-md disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none"
+                    >
+                      <RotateCcw className="w-4 h-4" /> {notification.retryable ? '알림 재시도' : '재시도 불가'}
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl md:rounded-3xl border border-zinc-200 overflow-hidden shadow-sm">

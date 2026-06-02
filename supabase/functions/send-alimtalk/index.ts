@@ -82,6 +82,11 @@ type WaitingMessageTarget = {
   waitingStatus: string
 }
 
+type WaitingNotificationLogRow = {
+  id: string
+  status: 'pending' | 'sent' | 'failed'
+}
+
 function toWaitingNotificationEvent(type: MessageType): ManagedTemplateEvent | null {
   if (type === 'WAITING_CREATED') return 'waiting_created'
   if (type === 'WAITING_CALLED') return 'waiting_called'
@@ -225,9 +230,11 @@ async function getWaitingNotificationContext(
 async function insertWaitingNotificationLog(
   adminClient: any,
   params: { storeId: string; waitingId: string; type: MessageType },
-): Promise<string | null> {
+): Promise<{ logId: string | null; shouldSend: boolean }> {
   const event = toWaitingNotificationEvent(params.type)
-  if (!event) return null
+  if (!event) {
+    return { logId: null, shouldSend: true }
+  }
 
   const { data, error } = await adminClient
     .from('waiting_notifications')
@@ -241,11 +248,35 @@ async function insertWaitingNotificationLog(
     .select('id')
     .single()
 
-  if (error || !data?.id) {
-    throw new Error(error?.message ?? 'waiting notification log insert failed')
+  if (error) {
+    if (error.code === '23505' || error.message?.toLowerCase().includes('duplicate key')) {
+      const { data: existingLog, error: existingLogError } = await adminClient
+        .from('waiting_notifications')
+        .select('id, status')
+        .eq('waiting_id', params.waitingId)
+        .eq('store_id', params.storeId)
+        .eq('event', event)
+        .maybeSingle()
+
+      if (existingLogError || !existingLog?.id) {
+        throw new Error(existingLogError?.message ?? 'waiting notification log lookup failed')
+      }
+
+      const typedExistingLog = existingLog as WaitingNotificationLogRow
+      return {
+        logId: typedExistingLog.id,
+        shouldSend: typedExistingLog.status !== 'sent',
+      }
+    }
+
+    throw new Error(error.message ?? 'waiting notification log insert failed')
   }
 
-  return data.id as string
+  if (!data?.id) {
+    throw new Error('waiting notification log insert failed')
+  }
+
+  return { logId: data.id as string, shouldSend: true }
 }
 
 async function updateWaitingNotificationLog(
@@ -425,7 +456,15 @@ serve(async (req: Request) => {
       storeName = target.storeName
       teamsAhead = target.teamsAhead
       estimatedWaitMinutes = target.estimatedWaitMinutes
-      notificationLogId = await insertWaitingNotificationLog(adminClient, { storeId, waitingId, type })
+      const waitingNotificationLog = await insertWaitingNotificationLog(adminClient, { storeId, waitingId, type })
+      notificationLogId = waitingNotificationLog.logId
+
+      if (!waitingNotificationLog.shouldSend) {
+        return new Response(
+          JSON.stringify({ success: true, deduped: true }),
+          { headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
     }
 
     if (type === 'WAITING_CALLED') {

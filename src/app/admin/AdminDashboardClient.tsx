@@ -21,7 +21,7 @@ import { createOrder } from '@/lib/api/order'
 import { completeWaiting as apiCompleteWaiting } from '@/lib/api/waiting'
 import { getStoreSettings, updateStoreStaffCallOptions, updateStoreWaitingMinutesPerTeam } from '@/lib/api/storeSettings'
 import { resolveStaffCall as apiResolveStaffCall } from '@/lib/api/staffCall'
-import { callWaitingAction } from '@/app/actions/waiting'
+import { callWaitingAction, listFailedWaitingNotificationsAction, retryWaitingNotificationAction } from '@/app/actions/waiting'
 
 import { notifyStaffCall, primeStaffAlertAudio, isStaffAlertSoundEnabled, setStaffAlertSoundEnabled } from '@/hooks/useOrderNotification'
 import { useOrders } from '@/hooks/useOrders'
@@ -144,6 +144,21 @@ export default function AdminDashboardClient() {
 
   const { waitings: rawWaitings } = useWaitingQueue(storeId || null)
   const { staffCalls: rawStaffCalls } = useStaffCalls(storeId || null)
+  const [failedWaitingNotifications, setFailedWaitingNotifications] = useState<Awaited<ReturnType<typeof listFailedWaitingNotificationsAction>>>([])
+
+  const refreshFailedWaitingNotifications = React.useCallback(async () => {
+    if (!storeId) {
+      setFailedWaitingNotifications([])
+      return
+    }
+
+    try {
+      const rows = await listFailedWaitingNotificationsAction(storeId)
+      setFailedWaitingNotifications(rows)
+    } catch {
+      setFailedWaitingNotifications([])
+    }
+  }, [storeId])
 
   // --- Lookup maps ---
   const tableNumberMap = useMemo(() => {
@@ -315,6 +330,11 @@ export default function AdminDashboardClient() {
     if (user?.role === 'staff' && !STAFF_ALLOWED_TABS.has(activeTab)) setActiveTab('orders')
   }, [user?.role, appMode, activeTab])
 
+  useEffect(() => {
+    if (activeTab !== 'waiting') return
+    void refreshFailedWaitingNotifications()
+  }, [activeTab, refreshFailedWaitingNotifications])
+
   // --- Subscription check ---
   const [storeExpired, setStoreExpired] = useState(false)
   useEffect(() => {
@@ -484,6 +504,8 @@ export default function AdminDashboardClient() {
       toast.success(`대기 ${queueNumber}번 고객님을 호출했습니다.`, { icon: <Volume2 className="w-5 h-5 text-blue-500" /> })
     } catch {
       toast.error('호출에 실패했습니다.')
+    } finally {
+      void refreshFailedWaitingNotifications()
     }
   }
 
@@ -494,6 +516,23 @@ export default function AdminDashboardClient() {
       toast.success(`대기 ${queueNumber}번 고객님 입장이 완료되었습니다.`)
     } catch {
       toast.error('입장 처리에 실패했습니다.')
+    } finally {
+      void refreshFailedWaitingNotifications()
+    }
+  }
+
+  const retryWaitingNotification = async (notificationId: string) => {
+    try {
+      const result = await retryWaitingNotificationAction(notificationId)
+      if (result.success) {
+        toast.success('알림 재시도 요청을 보냈습니다.')
+      } else {
+        toast.error(result.message ?? '알림 재시도에 실패했습니다.')
+      }
+    } catch {
+      toast.error('알림 재시도에 실패했습니다.')
+    } finally {
+      void refreshFailedWaitingNotifications()
     }
   }
 
@@ -1158,9 +1197,11 @@ export default function AdminDashboardClient() {
                 <WaitingPanel
                   waitings={waitings}
                   staffCalls={staffCalls}
+                  failedNotifications={failedWaitingNotifications}
                   callWaiting={callWaiting}
                   completeWaiting={completeWaiting}
                   resolveStaffCall={resolveStaffCall}
+                  retryWaitingNotification={retryWaitingNotification}
                   getStaffCallTableLabel={getStaffCallTableLabel}
                   onOpenKioskMode={() => {}}
                 />

@@ -99,6 +99,29 @@ describe('createWaiting', () => {
     })).resolves.toEqual({ queueNumber: 43, waitingId: 'w43' })
 
     expect(warnSpy).toHaveBeenCalled()
+    expect(supabase.functions.invoke).toHaveBeenCalledTimes(2)
+    warnSpy.mockRestore()
+  })
+
+  it('should retry waiting_created notification once before succeeding', async () => {
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: { queue_number: 44, waiting_id: 'w44' },
+      error: null,
+    } as any)
+    vi.mocked(supabase.functions.invoke)
+      .mockResolvedValueOnce({ data: null, error: new Error('temporary notify failure') } as any)
+      .mockResolvedValueOnce({ data: { ok: true }, error: null } as any)
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await expect(createWaiting({
+      storeId: 's1',
+      phone: '01011112222',
+      partySize: 4,
+    })).resolves.toEqual({ queueNumber: 44, waitingId: 'w44' })
+
+    expect(supabase.functions.invoke).toHaveBeenCalledTimes(2)
+    expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 })

@@ -15,7 +15,7 @@ vi.mock('@supabase/supabase-js', () => ({
 
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { createWaitingAction, cancelWaitingAction, callWaitingAction } from './waiting'
+import { createWaitingAction, cancelWaitingAction, callWaitingAction, retryWaitingNotificationAction } from './waiting'
 
 function makeSelectChain(result: { data: unknown; error: { message: string } | null; count?: number | null }) {
   const single = vi.fn().mockResolvedValue(result)
@@ -461,6 +461,98 @@ describe('callWaitingAction', () => {
     )
 
     await expect(callWaitingAction('waiting-1')).resolves.toBeUndefined()
+    expect(functionsInvokeMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('retryWaitingNotificationAction', () => {
+  it('retries a failed WAITING_CREATED notification when the waiting is still active', async () => {
+    serverFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({
+          data: {
+            id: 'notif-1',
+            waiting_id: 'waiting-1',
+            store_id: 'store-1',
+            event: 'waiting_created',
+            status: 'failed',
+            error_msg: 'provider down',
+            created_at: '2026-06-02T10:00:00.000Z',
+          },
+          error: null,
+        }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({
+          data: { id: 'waiting-1', phone: '01099990000', queue_number: 12, status: 'waiting' },
+          error: null,
+        }) as any,
+      )
+
+    serviceFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { name: '테스트매장' }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: { waiting_minutes_per_team: 5 }, error: null }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({ data: null, count: 2, error: null }) as any,
+      )
+
+    functionsInvokeMock.mockResolvedValue({ data: { ok: true }, error: null })
+
+    await expect(retryWaitingNotificationAction('notif-1')).resolves.toEqual({ success: true })
+
+    expect(functionsInvokeMock).toHaveBeenCalledWith('send-alimtalk', {
+      body: {
+        to: '01099990000',
+        type: 'WAITING_CREATED',
+        queueNumber: 12,
+        storeName: '테스트매장',
+        teamsAhead: 2,
+        estimatedWaitMinutes: 10,
+        storeId: 'store-1',
+        waitingId: 'waiting-1',
+      },
+    })
+  })
+
+  it('marks retry as failed when the waiting is no longer retryable', async () => {
+    serverFromMock
+      .mockReturnValueOnce(
+        makeSelectChain({
+          data: {
+            id: 'notif-2',
+            waiting_id: 'waiting-2',
+            store_id: 'store-1',
+            event: 'waiting_created',
+            status: 'failed',
+            error_msg: 'provider down',
+            created_at: '2026-06-02T10:05:00.000Z',
+          },
+          error: null,
+        }) as any,
+      )
+      .mockReturnValueOnce(
+        makeSelectChain({
+          data: { id: 'waiting-2', phone: '01011112222', queue_number: 9, status: 'completed' },
+          error: null,
+        }) as any,
+      )
+
+    const failedUpdate = makeBareUpdateChain({ error: null })
+    serviceFromMock.mockReturnValueOnce(failedUpdate as any)
+
+    await expect(retryWaitingNotificationAction('notif-2')).resolves.toEqual({
+      success: false,
+      message: '현재 상태에서는 이 알림을 재시도할 수 없습니다.',
+    })
+
+    expect(failedUpdate.update).toHaveBeenCalledWith({
+      status: 'failed',
+      error_msg: '현재 상태에서는 이 알림을 재시도할 수 없습니다.',
+    })
     expect(functionsInvokeMock).not.toHaveBeenCalled()
   })
 })
