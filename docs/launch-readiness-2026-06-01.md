@@ -58,7 +58,7 @@
 1. Decide whether manual retry is sufficient for pilot launch or whether an automatic retry worker is required before broader rollout
 2. Verify at least one real alimtalk send path end-to-end with the approved test recipient only (`01075358897`)
 3. Close or consciously defer the 4 skipped legacy notification-permission E2E cases
-4. Update operator runbooks so staff know to check the new failed-notification block in the waiting panel
+4. Update operator runbooks so staff know to check the new failed-notification block in the waiting panel (`docs/WAITING-NOTIFICATION-RUNBOOK.md`)
 
 ## Practical recommendation
 - **Controlled pilot / limited production use:** GO
