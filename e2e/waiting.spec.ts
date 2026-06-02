@@ -7,11 +7,13 @@ import {
   deleteStoresWithTestTag,
   deleteStoreBySlug,
   fillDateRange,
+  fillSuperadminCreateStoreForm,
   getServiceRoleHeaders,
   markStoreTestData,
   login,
   loginAndWaitForAdmin,
   loginAndWaitForPasswordChange,
+  lookupStoreByName,
   getSupabaseConfig,
   supabaseHeaders,
   supabaseGet,
@@ -24,7 +26,6 @@ if (!SUPERADMIN_EMAIL || !SUPERADMIN_PASSWORD) {
 
 const ts = Date.now()
 const STORE_NAME = `대기테스트매장${ts}`
-const STORE_SLUG = `waiting-test-${ts}`
 const OWNER_EMAIL = `waiting-owner-${ts}@tableflow.com`
 const OWNER_PASSWORD = 'Test1234!@'
 const OWNER_NEW_PASSWORD = 'Test5678!@'
@@ -32,12 +33,13 @@ const OWNER_NEW_PASSWORD = 'Test5678!@'
 const today = new Date().toISOString().split('T')[0]
 const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-type StoreRow = { id: string }
+type StoreRow = { id: string; slug: string }
 type WaitingRow = { id: string; phone: string; party_size: number; queue_number: number; status: string }
 type TableRow = { id: string; table_number: number }
 type StaffCallVerifyRow = { id: string; status: string; resolved_at: string | null; option_name: string }
 
 let storeId = ''
+let storeSlug = ''
 
 test.describe.configure({ mode: 'serial' })
 
@@ -48,15 +50,20 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
     await page.getByRole('button', { name: '매장 추가' }).click()
 
-    await page.getByPlaceholder('예) 맛있는 식당').fill(STORE_NAME)
-    await page.getByPlaceholder('예) tasty-restaurant').fill(STORE_SLUG)
-    await page.getByPlaceholder('owner@example.com').fill(OWNER_EMAIL)
-    await page.getByPlaceholder('8자 이상').fill(OWNER_PASSWORD)
-    await fillDateRange(page, today, nextYear)
+    await fillSuperadminCreateStoreForm(page, {
+      name: STORE_NAME,
+      ownerEmail: OWNER_EMAIL,
+      ownerPassword: OWNER_PASSWORD,
+      startDate: today,
+      endDate: nextYear,
+    })
 
     await page.getByRole('button', { name: '매장 생성' }).click()
     await expect(page.getByRole('cell', { name: STORE_NAME })).toBeVisible({ timeout: 10000 })
-    await markStoreTestData(STORE_SLUG)
+    const store = await lookupStoreByName<StoreRow>(page, STORE_NAME)
+    storeId = store.id
+    storeSlug = store.slug
+    await markStoreTestData(storeSlug)
   })
 
   test('2. 점주 첫 로그인 → 비밀번호 변경', async ({ page }) => {
@@ -67,17 +74,14 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
   test('3. storeId 추출', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
 
-    const rows = await supabaseGet<StoreRow>(
-      page,
-      `stores?select=id&slug=eq.${encodeURIComponent(STORE_SLUG)}&limit=1`
-    )
-    expect(rows.length).toBeGreaterThan(0)
-    storeId = rows[0].id
+    const store = await lookupStoreByName<StoreRow>(page, STORE_NAME)
+    storeId = store.id
+    storeSlug = store.slug
   })
 
   test('SC-026: 대기 키오스크 UI — 전화번호 키패드 + 인원 선택 화면 검증', async ({ page }) => {
     // /waiting/:storeSlug 접근 (비로그인 공개 페이지)
-    await page.goto(`/waiting/${STORE_SLUG}`)
+    await page.goto(`/waiting/${storeSlug}`)
     await page.waitForLoadState('networkidle')
 
     // Step 1: 전화번호 키패드 화면 확인
@@ -149,12 +153,12 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
   test('RS-003: 손상된 sessionStorage 복구', async ({ page }) => {
     // /waiting/:storeSlug로 접근
-    await page.goto(`/waiting/${STORE_SLUG}`)
+    await page.goto(`/waiting/${storeSlug}`)
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(1000) // 페이지 완전 렌더링 확보
 
     // sessionStorage에 invalid JSON을 저장
-    const storageKey = `waiting:${STORE_SLUG}`
+    const storageKey = `waiting:${storeSlug}`
     await page.evaluate((key) => {
       sessionStorage.setItem(key, 'INVALID_JSON_{')
     }, storageKey)
@@ -172,7 +176,7 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
   test('RS-004: 대기 등록 후 새로고침 시 상태 복구', async ({ page }) => {
     // /waiting/:storeSlug에서 대기 등록 (step 3까지 진행)
-    await page.goto(`/waiting/${STORE_SLUG}`)
+    await page.goto(`/waiting/${storeSlug}`)
     await page.waitForLoadState('networkidle')
     await page.waitForTimeout(1000)
 
@@ -217,7 +221,7 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     await expect(page.getByRole('heading', { name: /대기 완료|완료|등록 완료/ })).toBeVisible({ timeout: 10000 })
 
     // sessionStorage 확인 (새로고침 전)
-    const storageKeyPre = `waiting:${STORE_SLUG}`
+    const storageKeyPre = `waiting:${storeSlug}`
     const savedBeforeReload = await page.evaluate((key) => {
       const raw = sessionStorage.getItem(key)
       return raw ? JSON.parse(raw) : null
@@ -233,7 +237,7 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     expect(completeAfter, '새로고침 후 대기 완료 상태가 유지되어야 합니다.').toBeTruthy()
 
     // sessionStorage에 저장된 대기ID가 존재해야 함
-    const storageKey = `waiting:${STORE_SLUG}`
+    const storageKey = `waiting:${storeSlug}`
     const saved = await page.evaluate((key) => {
       const raw = sessionStorage.getItem(key)
       return raw ? JSON.parse(raw) : null
@@ -246,7 +250,7 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
   test('SC-027A: 대기 취소 후 같은 번호 재등록 시 새 번호를 받는다', async ({ page }) => {
     expect(storeId).toBeTruthy()
 
-    await page.goto(`/waiting/${STORE_SLUG}`)
+    await page.goto(`/waiting/${storeSlug}`)
     await page.waitForLoadState('networkidle')
 
     for (const digit of ['1', '2', '3', '4', '5', '6', '7', '8']) {
@@ -257,7 +261,7 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     await page.getByRole('button', { name: '대기 등록 완료하기' }).click()
     await expect(page.getByRole('heading', { name: /대기 등록이 완료되었습니다!/ })).toBeVisible({ timeout: 10000 })
 
-    const storageKey = `waiting:${STORE_SLUG}`
+    const storageKey = `waiting:${storeSlug}`
     const firstSaved = await page.evaluate((key) => {
       const raw = sessionStorage.getItem(key)
       return raw ? JSON.parse(raw) : null
@@ -350,6 +354,6 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
   test.afterAll(async () => {
     await deleteStoresWithTestTag()
-    await deleteStoreBySlug(STORE_SLUG)
+    await deleteStoreBySlug(storeSlug)
   })
 })

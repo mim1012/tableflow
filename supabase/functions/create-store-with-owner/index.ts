@@ -4,7 +4,7 @@ import { corsHeaders } from '../_shared/cors.ts'
 
 const SUPERADMIN_ROLE = 'super_admin'
 const SLUG_PATTERN = /^[a-z0-9-]+$/
-const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$/
+const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/
 
 function json(data: unknown, init: ResponseInit = {}, req?: Request) {
   return new Response(JSON.stringify(data), {

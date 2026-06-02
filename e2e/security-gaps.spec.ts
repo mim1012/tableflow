@@ -9,12 +9,14 @@ import {
   deleteStoreBySlug,
   deleteStoresWithTestTag,
   fillDateRange,
+  fillSuperadminCreateStoreForm,
   login,
   loginAndWaitForAdmin,
   loginAndWaitForPasswordChange,
   completePasswordChange,
   markStoreTestData,
   requireEnv,
+  lookupStoreByName,
   getSupabaseConfig,
   getServiceRoleHeaders,
   supabaseGet,
@@ -32,14 +34,12 @@ const ts = Date.now()
 
 // Store A (주 테스트 매장)
 const STORE_A_NAME = `보안A매장${ts}`
-const STORE_A_SLUG = `sec-a-${ts}`
 const OWNER_A_EMAIL = `sec-a-owner-${ts}@tableflow.com`
 const OWNER_A_PASSWORD = 'Test1234!@'
 const OWNER_A_NEW_PASSWORD = 'Test5678!@'
 
 // Store B (크로스테넌트 대상)
 const STORE_B_NAME = `보안B매장${ts}`
-const STORE_B_SLUG = `sec-b-${ts}`
 const OWNER_B_EMAIL = `sec-b-owner-${ts}@tableflow.com`
 const OWNER_B_PASSWORD = 'Test1234!@'
 const OWNER_B_NEW_PASSWORD = 'Test5678!@'
@@ -52,14 +52,16 @@ const MANAGER_NEW_PASSWORD = 'Mgr5678!@'
 const today = new Date().toISOString().split('T')[0]
 const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-type StoreRow = { id: string }
+type StoreRow = { id: string; slug: string }
 type TableRow = { id: string; qr_token: string }
 type MemberRow = { id: string; role: string }
 type SeedRow = { id: string }
 type OrderRow = { id: string; store_id: string }
 
 let storeAId = ''
+let storeASlug = ''
 let storeBId = ''
+let storeBSlug = ''
 let storeATableId = ''
 let storeAQrToken = ''
 let storeBTableId = ''
@@ -80,17 +82,21 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     await expect(page).toHaveURL('/superadmin', { timeout: 10000 })
 
     await page.getByRole('button', { name: '매장 추가' }).click()
-    await expect(page.getByPlaceholder('예) 맛있는 식당')).toBeVisible()
 
-    await page.getByPlaceholder('예) 맛있는 식당').fill(STORE_A_NAME)
-    await page.getByPlaceholder('예) tasty-restaurant').fill(STORE_A_SLUG)
-    await page.getByPlaceholder('owner@example.com').fill(OWNER_A_EMAIL)
-    await page.getByPlaceholder('8자 이상').fill(OWNER_A_PASSWORD)
-    await fillDateRange(page, today, nextYear)
+    await fillSuperadminCreateStoreForm(page, {
+      name: STORE_A_NAME,
+      ownerEmail: OWNER_A_EMAIL,
+      ownerPassword: OWNER_A_PASSWORD,
+      startDate: today,
+      endDate: nextYear,
+    })
 
     await page.getByRole('button', { name: '매장 생성' }).click()
     await expect(page.getByRole('cell', { name: STORE_A_NAME })).toBeVisible({ timeout: 10000 })
-    await markStoreTestData(STORE_A_SLUG)
+    const store = await lookupStoreByName<StoreRow>(page, STORE_A_NAME)
+    storeAId = store.id
+    storeASlug = store.slug
+    await markStoreTestData(storeASlug)
   })
 
   // ── Setup: Store B 생성 ──
@@ -99,17 +105,21 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     await expect(page).toHaveURL('/superadmin', { timeout: 10000 })
 
     await page.getByRole('button', { name: '매장 추가' }).click()
-    await expect(page.getByPlaceholder('예) 맛있는 식당')).toBeVisible()
 
-    await page.getByPlaceholder('예) 맛있는 식당').fill(STORE_B_NAME)
-    await page.getByPlaceholder('예) tasty-restaurant').fill(STORE_B_SLUG)
-    await page.getByPlaceholder('owner@example.com').fill(OWNER_B_EMAIL)
-    await page.getByPlaceholder('8자 이상').fill(OWNER_B_PASSWORD)
-    await fillDateRange(page, today, nextYear)
+    await fillSuperadminCreateStoreForm(page, {
+      name: STORE_B_NAME,
+      ownerEmail: OWNER_B_EMAIL,
+      ownerPassword: OWNER_B_PASSWORD,
+      startDate: today,
+      endDate: nextYear,
+    })
 
     await page.getByRole('button', { name: '매장 생성' }).click()
     await expect(page.getByRole('cell', { name: STORE_B_NAME })).toBeVisible({ timeout: 10000 })
-    await markStoreTestData(STORE_B_SLUG)
+    const store = await lookupStoreByName<StoreRow>(page, STORE_B_NAME)
+    storeBId = store.id
+    storeBSlug = store.slug
+    await markStoreTestData(storeBSlug)
   })
 
   // ── Setup: Owner A 비번 변경 ──
@@ -130,12 +140,9 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     await loginAndWaitForAdmin(page, OWNER_A_EMAIL, OWNER_A_NEW_PASSWORD)
     await page.waitForLoadState('networkidle')
 
-    const storeARows = await supabaseGet<StoreRow>(
-      page,
-      `stores?select=id&slug=eq.${encodeURIComponent(STORE_A_SLUG)}&limit=1`,
-    )
-    expect(storeARows.length).toBeGreaterThan(0)
-    storeAId = storeARows[0].id
+    const storeA = await lookupStoreByName<StoreRow>(page, STORE_A_NAME)
+    storeAId = storeA.id
+    storeASlug = storeA.slug
 
     const tableARows = await supabaseGet<TableRow>(
       page,
@@ -150,13 +157,9 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     test.skip(!serviceHeaders, 'SUPABASE_SERVICE_ROLE_KEY 미설정')
 
     const { url } = getSupabaseConfig()
-    const storeBRes = await fetch(
-      `${url}/rest/v1/stores?select=id&slug=eq.${encodeURIComponent(STORE_B_SLUG)}&limit=1`,
-      { headers: serviceHeaders! },
-    )
-    const storeBRows = (await storeBRes.json()) as StoreRow[]
-    expect(storeBRows.length).toBeGreaterThan(0)
-    storeBId = storeBRows[0].id
+    const storeB = await lookupStoreByName<StoreRow>(page, STORE_B_NAME)
+    storeBId = storeB.id
+    storeBSlug = storeB.slug
 
     const tableBRes = await fetch(
       `${url}/rest/v1/tables?select=id,qr_token&store_id=eq.${storeBId}&order=table_number.asc&limit=1`,
@@ -527,7 +530,7 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     const anonCtx = await page.context().browser()!.newContext()
     const anonPage = await anonCtx.newPage()
 
-    await anonPage.goto(`/m/${STORE_A_SLUG}/${storeAQrToken}`)
+    await anonPage.goto(`/m/${storeASlug}/${storeAQrToken}`)
     await anonPage.waitForLoadState('networkidle')
     await anonPage.waitForTimeout(3000)
 
@@ -848,7 +851,7 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
 
   test.afterAll(async () => {
     await deleteStoresWithTestTag()
-    await deleteStoreBySlug(STORE_A_SLUG)
-    await deleteStoreBySlug(STORE_B_SLUG)
+    await deleteStoreBySlug(storeASlug)
+    await deleteStoreBySlug(storeBSlug)
   })
 })

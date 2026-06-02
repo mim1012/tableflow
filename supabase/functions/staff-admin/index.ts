@@ -15,7 +15,7 @@ function json(data: unknown, init: ResponseInit = {}, req?: Request) {
 
 const STAFF_CREATOR_ROLES = ['owner', 'manager'] as const
 const MANAGEABLE_ROLES_BY_MANAGER = ['staff'] as const
-const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$/
+const PASSWORD_PATTERN = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/
 
 type StoreRole = 'owner' | 'manager' | 'staff'
 

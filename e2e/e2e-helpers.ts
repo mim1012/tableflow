@@ -123,6 +123,29 @@ export async function fillDateRange(page: Page, startDate: string, endDate: stri
   await dateInputs.nth(1).fill(endDate)
 }
 
+export async function fillSuperadminCreateStoreForm(
+  page: Page,
+  params: {
+    name: string
+    ownerEmail: string
+    ownerPassword: string
+    startDate: string
+    endDate: string
+  },
+): Promise<void> {
+  const form = page.locator('h2:has-text("새 매장 추가") + form').first()
+  await expect(form, 'superadmin 새 매장 추가 폼이 보여야 합니다.').toBeVisible({ timeout: 10000 })
+
+  const textInputs = form.locator('input:not([type="date"])')
+  await textInputs.nth(0).fill(params.name)
+  await textInputs.nth(3).fill(params.ownerEmail)
+  await textInputs.nth(4).fill(params.ownerPassword)
+
+  const dateInputs = form.locator('input[type="date"]')
+  await dateInputs.nth(0).fill(params.startDate)
+  await dateInputs.nth(1).fill(params.endDate)
+}
+
 export function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY
@@ -193,6 +216,15 @@ export async function supabasePost<T = unknown>(page: Page, path: string, body: 
 
   expect(res.ok, `Supabase POST failed: ${path} (${res.status} ${res.statusText})`).toBeTruthy()
   return (await res.json()) as T[]
+}
+
+export async function lookupStoreByName<T extends { id: string; slug: string }>(page: Page, name: string): Promise<T> {
+  const rows = await supabaseGet<T>(
+    page,
+    `stores?select=id,slug&name=eq.${encodeURIComponent(name)}&order=created_at.desc&limit=1`,
+  )
+  expect(rows.length, `매장 조회 실패: ${name}`).toBeGreaterThan(0)
+  return rows[0]
 }
 
 function isTestTagNotSupported(errorText: string) {

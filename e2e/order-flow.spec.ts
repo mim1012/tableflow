@@ -7,10 +7,12 @@ import {
   deleteStoresWithTestTag,
   deleteStoreBySlug,
   fillDateRange,
+  fillSuperadminCreateStoreForm,
   markStoreTestData,
   login,
   loginAndWaitForAdmin,
   loginAndWaitForPasswordChange,
+  lookupStoreByName,
   sidebarBtn,
   supabaseGet,
   supabasePost,
@@ -36,7 +38,6 @@ if (
 
 const ts = Date.now()
 const STORE_NAME = `주문테스트매장${ts}`
-const STORE_SLUG = `order-test-${ts}`
 const OWNER_EMAIL = `order-owner-${ts}@tableflow.com`
 const OWNER_PASSWORD = 'Test1234!@'
 const OWNER_NEW_PASSWORD = 'Test5678!@'
@@ -45,6 +46,7 @@ const STAFF_PASSWORD = 'Staff1234!@'
 const STAFF_NEW_PASSWORD = 'Staff5678!@'
 
 let storeId = ''
+let storeSlug = ''
 let tableId = ''
 let qrToken = ''
 let categoryId = ''
@@ -54,7 +56,7 @@ let tableNumber = 0
 const today = new Date().toISOString().split('T')[0]
 const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-type StoreRow = { id: string }
+type StoreRow = { id: string; slug: string }
 type MenuSeedRow = { id: string }
 type TableRow = { id: string; table_number: number; qr_token: string }
 type OrderSeedRow = { id: string }
@@ -66,12 +68,9 @@ interface NotificationProbe {
 }
 
 async function getStoreId(page: Page): Promise<string> {
-  const storeRows = await supabaseGet<StoreRow>(
-    page,
-    `stores?select=id&slug=eq.${encodeURIComponent(STORE_SLUG)}&limit=1`
-  )
-  expect(storeRows.length, '주문 테스트 매장 ID를 조회할 수 있어야 합니다.').toBeGreaterThan(0)
-  return storeRows[0].id
+  const store = await lookupStoreByName<StoreRow>(page, STORE_NAME)
+  storeSlug = store.slug
+  return store.id
 }
 
 async function getLatestOrderIdByTable(page: Page, targetTableId: string): Promise<string | null> {
@@ -269,15 +268,20 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
     await expect(page.getByRole('button', { name: '매장 추가' })).toBeVisible()
     await page.getByRole('button', { name: '매장 추가' }).click()
 
-    await page.getByPlaceholder('예) 맛있는 식당').fill(STORE_NAME)
-    await page.getByPlaceholder('예) tasty-restaurant').fill(STORE_SLUG)
-    await page.getByPlaceholder('owner@example.com').fill(OWNER_EMAIL)
-  await page.getByPlaceholder('8자 이상').fill(OWNER_PASSWORD)
-  await fillDateRange(page, today, nextYear)
+    await fillSuperadminCreateStoreForm(page, {
+      name: STORE_NAME,
+      ownerEmail: OWNER_EMAIL,
+      ownerPassword: OWNER_PASSWORD,
+      startDate: today,
+      endDate: nextYear,
+    })
 
-  await page.getByRole('button', { name: '매장 생성' }).click()
-  await expect(page.getByRole('cell', { name: STORE_NAME })).toBeVisible({ timeout: 10000 })
-  await markStoreTestData(STORE_SLUG)
+    await page.getByRole('button', { name: '매장 생성' }).click()
+    await expect(page.getByRole('cell', { name: STORE_NAME })).toBeVisible({ timeout: 10000 })
+    const store = await lookupStoreByName<StoreRow>(page, STORE_NAME)
+    storeId = store.id
+    storeSlug = store.slug
+    await markStoreTestData(storeSlug)
   })
 
   test('2. 점주 첫 로그인 → 비번 변경 → 어드민 진입', async ({ page }) => {
@@ -344,8 +348,8 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
   test('5. 고객 — 메뉴 화면 조회', async ({ page }) => {
     expect(tableId, '테이블 ID가 있어야 고객 화면 검증이 가능합니다.').toBeTruthy()
 
-    await page.goto(`/m/${STORE_SLUG}/${qrToken}`)
-    await expect(page).toHaveURL(new RegExp(`^.*/m/${STORE_SLUG}/${qrToken}`), { timeout: 10000 })
+    await page.goto(`/m/${storeSlug}/${qrToken}`)
+    await expect(page).toHaveURL(new RegExp(`^.*/m/${storeSlug}/${qrToken}`), { timeout: 10000 })
 
     const bodyText = await page.locator('body').innerText()
     expect(bodyText).not.toContain('찾을 수 없습니다')
@@ -365,7 +369,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     const customerCtx = await browser.newContext()
     const customerPage = await customerCtx.newPage()
-    await customerPage.goto(`/m/${STORE_SLUG}/${qrToken}`)
+    await customerPage.goto(`/m/${storeSlug}/${qrToken}`)
     await expect(customerPage.locator('body')).toContainText('환영합니다', { timeout: 10000 })
 
     await placeOneOrderFromCustomer(customerPage)
@@ -409,7 +413,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     const customerCtx = await browser.newContext()
     const customerPage = await customerCtx.newPage()
-    await customerPage.goto(`/m/${STORE_SLUG}/${qrToken}`)
+    await customerPage.goto(`/m/${storeSlug}/${qrToken}`)
     await expect(customerPage.locator('body')).toContainText('환영합니다', { timeout: 10000 })
 
     await placeOneOrderFromCustomer(customerPage)
@@ -491,7 +495,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
     const customerCtx = await browser.newContext()
     const customerPage = await customerCtx.newPage()
-    await customerPage.goto(`/m/${STORE_SLUG}/${qrToken}`)
+    await customerPage.goto(`/m/${storeSlug}/${qrToken}`)
     await expect(customerPage.locator('body')).toContainText('환영합니다', { timeout: 10000 })
 
     await placeOneOrderFromCustomer(customerPage)
@@ -695,6 +699,6 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
   test.afterAll(async () => {
     await deleteStoresWithTestTag()
-    await deleteStoreBySlug(STORE_SLUG)
+    await deleteStoreBySlug(storeSlug)
   })
 })
