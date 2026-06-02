@@ -18,6 +18,8 @@ import {
   supabasePost,
   getSupabaseConfig,
   supabaseHeaders,
+  waitForAdminShell,
+  waitForCustomerMenuReady,
 } from './e2e-helpers'
 
 if (!SUPERADMIN_EMAIL || !SUPERADMIN_PASSWORD) {
@@ -139,9 +141,7 @@ async function waitForOrderCardByOrderId(page: Page, orderId: string, expectedAc
 }
 
 async function placeOneOrderFromCustomer(page: Page) {
-  // Splash screen과 메뉴 로딩 대기
-  await page.waitForLoadState('networkidle')
-  await page.waitForTimeout(3000)
+  await waitForCustomerMenuReady(page)
 
   // 메뉴 아이템 카드 클릭 (cursor-pointer 클래스로 구분)
   const menuCard = page.locator('div.cursor-pointer').filter({ has: page.locator('button') }).first()
@@ -248,14 +248,17 @@ async function ensureNotificationContains(page: Page, expected: (probe: Notifica
 
 async function loginAsStaff(page: Page) {
   await login(page, STAFF_EMAIL, STAFF_PASSWORD)
-  await page.waitForLoadState('networkidle')
+  await expect
+    .poll(() => page.url(), { timeout: 15000 })
+    .toMatch(/\/(admin|change-password)$/)
+
   if (page.url().includes('change-password')) {
     await completePasswordChange(page, STAFF_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
   } else {
-    await expect(page).toHaveURL('/admin', { timeout: 10000 })
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
   }
+
+  await waitForAdminShell(page)
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -291,7 +294,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
   test('3. 점주 어드민 — 메뉴 관리 탭 접근', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     await clickSidebarButton(page, /매장 관리/)
     await clickSidebarButton(page, /메뉴 관리/)
@@ -300,7 +303,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
   test('4. 점주 어드민 — 테이블 확인 후 tableId 추출', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     storeId = await getStoreId(page)
     const tableRows = await supabaseGet<TableRow>(
@@ -370,7 +373,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
     const customerCtx = await browser.newContext()
     const customerPage = await customerCtx.newPage()
     await customerPage.goto(`/m/${storeSlug}/${qrToken}`)
-    await expect(customerPage.locator('body')).toContainText('환영합니다', { timeout: 10000 })
+    await waitForCustomerMenuReady(customerPage)
 
     await placeOneOrderFromCustomer(customerPage)
 
@@ -414,7 +417,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
     const customerCtx = await browser.newContext()
     const customerPage = await customerCtx.newPage()
     await customerPage.goto(`/m/${storeSlug}/${qrToken}`)
-    await expect(customerPage.locator('body')).toContainText('환영합니다', { timeout: 10000 })
+    await waitForCustomerMenuReady(customerPage)
 
     await placeOneOrderFromCustomer(customerPage)
     const newOrderId = await waitForNewOrderIdByTable(ownerAdminPage, tableId, previousOrderId)
@@ -461,7 +464,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
   test('7. 점주 어드민 — 직원 계정 생성 (UI 확인)', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     await clickSidebarButton(page, /매장 관리/)
     await clickSidebarButton(page, /직원/)
@@ -496,7 +499,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
     const customerCtx = await browser.newContext()
     const customerPage = await customerCtx.newPage()
     await customerPage.goto(`/m/${storeSlug}/${qrToken}`)
-    await expect(customerPage.locator('body')).toContainText('환영합니다', { timeout: 10000 })
+    await waitForCustomerMenuReady(customerPage)
 
     await placeOneOrderFromCustomer(customerPage)
 
@@ -525,7 +528,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
   test('9. role 권한 제한 확인', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     await clickSidebarButton(page, /매장 관리/)
     await clickSidebarButton(page, /메뉴 관리/)
@@ -536,7 +539,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
   test('SC-041. 실시간 채널 장애 복원성: 오프라인→온라인 전환 후 어드민 정상 동작', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     // 어드민 UI가 정상 로드되었는지 초기 확인
     const bodyText = await page.locator('body').innerText()
@@ -646,7 +649,7 @@ test.describe('TableFlow 사용자 시나리오 E2E', () => {
 
   test('NT-001: 어드민 첫 진입 시 알림 권한 자동 요청 없음', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     // 첫 진입 직후 permission request가 없어야 함
     let permissionRequested = false

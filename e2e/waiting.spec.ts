@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import {
   SUPERADMIN_EMAIL,
   SUPERADMIN_PASSWORD,
@@ -41,6 +41,25 @@ type StaffCallVerifyRow = { id: string; status: string; resolved_at: string | nu
 let storeId = ''
 let storeSlug = ''
 
+const UI_PHONE_DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const
+const API_TEST_PHONE = '01012345678'
+const REFRESH_RECOVERY_PHONE_DIGITS = ['2', '3', '4', '5', '6', '7', '8', '9'] as const
+const CANCEL_REREGISTRATION_PHONE_DIGITS = ['3', '4', '5', '6', '7', '8', '9', '0'] as const
+
+async function waitForWaitingKioskReady(page: Page) {
+  await expect(page.getByRole('heading', { name: /연락받을 휴대폰 번호를 입력해 주세요|연락처를 입력/ })).toBeVisible({
+    timeout: 10000,
+  })
+}
+
+async function enterWaitingPhoneDigits(page: Page, digits: readonly string[]) {
+  for (const digit of digits) {
+    const digitButton = page.locator(`button:has-text("${digit}")`).first()
+    await expect(digitButton, `숫자 ${digit} 버튼이 보여야 합니다`).toBeVisible({ timeout: 8000 })
+    await digitButton.click()
+  }
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
@@ -81,16 +100,14 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
   test('SC-026: 대기 키오스크 UI — 전화번호 키패드 + 인원 선택 화면 검증', async ({ page }) => {
     // /waiting/:storeSlug 접근 (비로그인 공개 페이지)
-    await page.goto(`/waiting/${storeSlug}`)
-    await page.waitForLoadState('networkidle')
+    await page.goto(`/waiting/${storeSlug}`, { waitUntil: 'domcontentloaded' })
+    await waitForWaitingKioskReady(page)
 
     // Step 1: 전화번호 키패드 화면 확인
-    await expect(page.getByRole('heading', { name: /연락처를 입력/ })).toBeVisible({ timeout: 8000 })
+    await waitForWaitingKioskReady(page)
 
     // 숫자 키패드 입력 (010-1234-5678)
-    for (const digit of ['1', '2', '3', '4', '5', '6', '7', '8']) {
-      await page.getByRole('button', { name: digit, exact: true }).click()
-    }
+    await enterWaitingPhoneDigits(page, UI_PHONE_DIGITS)
 
     // 전화번호 포맷 확인
     await expect(page.locator('body')).toContainText('010-1234-5678', { timeout: 3000 })
@@ -120,7 +137,7 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/create_waiting_atomic`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ p_store_id: storeId, p_phone: '01012345678', p_party_size: 3 }),
+      body: JSON.stringify({ p_store_id: storeId, p_phone: API_TEST_PHONE, p_party_size: 3 }),
     })
 
     if (!rpcRes.ok) {
@@ -139,11 +156,11 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     expect(readRows.length).toBeGreaterThan(0)
 
     const entry = readRows[0]
-    expect(entry.phone).toBe('01012345678')
+    expect(entry.phone).toBe(API_TEST_PHONE)
     expect(entry.party_size).toBe(3)
     expect(entry.queue_number).toBe(payload.queue_number)
     expect(entry.status).toBe('waiting')
-    expect(readRows[0].phone).toBe('01012345678')
+    expect(readRows[0].phone).toBe(API_TEST_PHONE)
     expect(readRows[0].queue_number).toBeGreaterThan(0)
   })
 
@@ -153,8 +170,8 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
   test('RS-003: 손상된 sessionStorage 복구', async ({ page }) => {
     // /waiting/:storeSlug로 접근
-    await page.goto(`/waiting/${storeSlug}`)
-    await page.waitForLoadState('networkidle')
+    await page.goto(`/waiting/${storeSlug}`, { waitUntil: 'domcontentloaded' })
+    await waitForWaitingKioskReady(page)
     await page.waitForTimeout(1000) // 페이지 완전 렌더링 확보
 
     // sessionStorage에 invalid JSON을 저장
@@ -164,8 +181,8 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     }, storageKey)
 
     // 새로고침
-    await page.reload()
-    await page.waitForLoadState('networkidle')
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await waitForWaitingKioskReady(page)
     await page.waitForTimeout(1000)
 
     // 앱이 크래시하지 않고 초기 상태로 복구되어야 함
@@ -176,13 +193,12 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
   test('RS-004: 대기 등록 후 새로고침 시 상태 복구', async ({ page }) => {
     // /waiting/:storeSlug에서 대기 등록 (step 3까지 진행)
-    await page.goto(`/waiting/${storeSlug}`)
-    await page.waitForLoadState('networkidle')
+    await page.goto(`/waiting/${storeSlug}`, { waitUntil: 'domcontentloaded' })
+    await waitForWaitingKioskReady(page)
     await page.waitForTimeout(1000)
 
     // step 1: 전화번호 입력
-    for (const digit of ['1', '2', '3', '4', '5', '6', '7', '8']) {
-      // CSS text selector로 숫자 버튼 찾기
+    for (const digit of REFRESH_RECOVERY_PHONE_DIGITS) {
       const btnLocator = page.locator(`button:has-text("${digit}")`).first()
       await expect(btnLocator, `숫자 ${digit} 버튼이 보여야 합니다`).toBeVisible({ timeout: 8000 })
       await btnLocator.click()
@@ -192,8 +208,7 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     const nextBtn = page.getByRole('button', { name: '다음', exact: true })
     await expect(nextBtn).toBeVisible({ timeout: 5000 })
     await nextBtn.click()
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(500)
+    await expect(page.getByRole('heading', { name: /방문 인원/ })).toBeVisible({ timeout: 5000 })
 
     // step 2: 인원 선택
     const plusBtn = page.getByRole('button', { name: '+', exact: true })
@@ -205,10 +220,6 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     await expect(submitBtn).toBeVisible({ timeout: 5000 })
     await expect(submitBtn).toBeEnabled({ timeout: 8000 })
     await submitBtn.click()
-
-    // API 응답 대기
-    await page.waitForLoadState('networkidle')
-    await page.waitForTimeout(2000)
 
     // step 3: 완료 상태 확인 - 더 유연한 heading 선택
     const headings = page.locator('h1, h2, h3, h4, h5, h6')
@@ -229,12 +240,13 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     expect(savedBeforeReload?.step, '새로고침 전 step=3이 저장되어야 합니다.').toBe(3)
 
     // 새로고침
-    await page.reload()
-    await page.waitForLoadState('networkidle')
+    await page.reload({ waitUntil: 'domcontentloaded' })
 
     // 완료 화면이 유지되어야 함
-    const completeAfter = await page.getByRole('heading', { name: /대기 완료|완료|등록 완료/ }).isVisible()
-    expect(completeAfter, '새로고침 후 대기 완료 상태가 유지되어야 합니다.').toBeTruthy()
+    await expect(
+      page.getByRole('heading', { name: /대기 완료|완료|등록 완료/ }),
+      '새로고침 후 대기 완료 상태가 유지되어야 합니다.',
+    ).toBeVisible({ timeout: 10000 })
 
     // sessionStorage에 저장된 대기ID가 존재해야 함
     const storageKey = `waiting:${storeSlug}`
@@ -249,13 +261,14 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
   test('SC-027A: 대기 취소 후 같은 번호 재등록 시 새 번호를 받는다', async ({ page }) => {
     expect(storeId).toBeTruthy()
+    const serviceHeaders = getServiceRoleHeaders()
+    test.skip(!serviceHeaders, 'SUPABASE_SERVICE_ROLE_KEY 미설정')
+    const { url } = getSupabaseConfig()
 
-    await page.goto(`/waiting/${storeSlug}`)
-    await page.waitForLoadState('networkidle')
+    await page.goto(`/waiting/${storeSlug}`, { waitUntil: 'domcontentloaded' })
+    await waitForWaitingKioskReady(page)
 
-    for (const digit of ['1', '2', '3', '4', '5', '6', '7', '8']) {
-      await page.locator(`button:has-text("${digit}")`).first().click()
-    }
+    await enterWaitingPhoneDigits(page, CANCEL_REREGISTRATION_PHONE_DIGITS)
 
     await page.getByRole('button', { name: '다음', exact: true }).click()
     await page.getByRole('button', { name: '대기 등록 완료하기' }).click()
@@ -272,15 +285,15 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     await page.getByRole('button', { name: '대기 취소하기' }).click()
     await expect(page.getByRole('heading', { name: /연락받을 휴대폰 번호를 입력해 주세요/ })).toBeVisible({ timeout: 10000 })
 
-    const cancelledRows = await supabaseGet<WaitingRow>(
-      page,
-      `waitings?select=id,queue_number,status&id=eq.${firstSaved.waitingId}&limit=1`,
+    const cancelledRes = await fetch(
+      `${url}/rest/v1/waitings?select=id,queue_number,status&id=eq.${firstSaved.waitingId}&limit=1`,
+      { headers: serviceHeaders! },
     )
+    expect(cancelledRes.ok, '취소된 대기 상태 조회가 성공해야 합니다.').toBeTruthy()
+    const cancelledRows = await cancelledRes.json() as WaitingRow[]
     expect(cancelledRows[0]?.status).toBe('cancelled')
 
-    for (const digit of ['1', '2', '3', '4', '5', '6', '7', '8']) {
-      await page.locator(`button:has-text("${digit}")`).first().click()
-    }
+    await enterWaitingPhoneDigits(page, CANCEL_REREGISTRATION_PHONE_DIGITS)
 
     await page.getByRole('button', { name: '다음', exact: true }).click()
     await page.getByRole('button', { name: '대기 등록 완료하기' }).click()
@@ -302,19 +315,18 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
 
     const serviceHeaders = getServiceRoleHeaders()
     test.skip(!serviceHeaders, 'SUPABASE_SERVICE_ROLE_KEY 미설정')
+    const { url } = getSupabaseConfig()
 
-    await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
-
-    const tableRows = await supabaseGet<TableRow>(
-      page,
-      `tables?select=id,table_number&store_id=eq.${storeId}&order=table_number.asc&limit=1`,
+    const tableRes = await fetch(
+      `${url}/rest/v1/tables?select=id,table_number&store_id=eq.${storeId}&order=table_number.asc&limit=1`,
+      { headers: serviceHeaders! },
     )
+    expect(tableRes.ok, `테이블 조회 실패: ${tableRes.status}`).toBeTruthy()
+    const tableRows = (await tableRes.json()) as TableRow[]
     expect(tableRows.length, '직원 호출을 연결할 테이블이 필요합니다.').toBeGreaterThan(0)
 
     const table = tableRows[0]
-    const optionName = '물티슈 주세요'
-    const { url } = getSupabaseConfig()
+    const optionName = `물티슈 주세요 ${Date.now()}`
 
     const insertRes = await fetch(`${url}/rest/v1/staff_calls`, {
       method: 'POST',
@@ -331,6 +343,8 @@ test.describe('SC-026/SC-027 대기 키오스크 E2E', () => {
     const insertedRows = (await insertRes.json()) as StaffCallVerifyRow[]
     expect(insertedRows.length).toBeGreaterThan(0)
     const staffCallId = insertedRows[0].id
+
+    await loginAndWaitForAdmin(page, OWNER_EMAIL, OWNER_NEW_PASSWORD)
 
     await clickSidebarButton(page, /웨이팅/)
     await expect(page.getByRole('heading', { name: '웨이팅 관리' })).toBeVisible({ timeout: 10000 })

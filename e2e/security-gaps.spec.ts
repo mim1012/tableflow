@@ -22,6 +22,8 @@ import {
   supabaseGet,
   supabasePost,
   supabaseHeaders,
+  waitForAdminShell,
+  waitForCustomerMenuReady,
 } from './e2e-helpers'
 
 requireEnv('TEST_SUPERADMIN_EMAIL')
@@ -138,7 +140,7 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
   test('5. 매장/테이블 정보 추출 + 테스트 데이터 seed', async ({ page }) => {
     // Store A 정보
     await loginAndWaitForAdmin(page, OWNER_A_EMAIL, OWNER_A_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     const storeA = await lookupStoreByName<StoreRow>(page, STORE_A_NAME)
     storeAId = storeA.id
@@ -252,10 +254,10 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
         menu_item_id: storeAMenuItemId,
         name: '토핑',
         is_required: false,
-        max_select: 1,
         sort_order: 1,
       }),
     })
+    expect(ogRes.ok, `option_groups seed failed: ${ogRes.status}`).toBeTruthy()
     const ogRows = (await ogRes.json()) as SeedRow[]
     storeAOptionGroupId = ogRows[0].id
 
@@ -283,7 +285,7 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     expect(storeBOrderId).toBeTruthy()
 
     await loginAndWaitForAdmin(page, OWNER_A_EMAIL, OWNER_A_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     // Owner A 토큰으로 Store B 주문 직접 조회 시도
     const orders = await supabaseGet<OrderRow>(
@@ -424,7 +426,7 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
 
   test('6. Store A에 매니저 계정 생성', async ({ page }) => {
     await loginAndWaitForAdmin(page, OWNER_A_EMAIL, OWNER_A_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await waitForAdminShell(page)
 
     // 사이드바 → 매장 관리 → 직원 관리
     const mgmtBtn = page.locator('aside button').filter({ hasText: /매장 관리/ }).first()
@@ -472,12 +474,16 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
 
     // 매니저로 로그인
     await login(page, MANAGER_EMAIL, MANAGER_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await expect
+      .poll(() => page.url(), { timeout: 15000 })
+      .toMatch(/\/(admin|change-password)$/)
     if (page.url().includes('change-password')) {
       await completePasswordChange(page, MANAGER_NEW_PASSWORD)
     } else {
-      await expect(page).toHaveURL('/admin', { timeout: 15000 })
+      await waitForAdminShell(page)
     }
+
+    await waitForAdminShell(page)
 
     const { url } = getSupabaseConfig()
     const headers = await supabaseHeaders(page)
@@ -531,8 +537,7 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     const anonPage = await anonCtx.newPage()
 
     await anonPage.goto(`/m/${storeASlug}/${storeAQrToken}`)
-    await anonPage.waitForLoadState('networkidle')
-    await anonPage.waitForTimeout(3000)
+    await waitForCustomerMenuReady(anonPage)
 
     // 에러 메시지 또는 메뉴 미표시 확인
     const bodyText = await anonPage.locator('body').innerText()
@@ -738,10 +743,14 @@ test.describe('P0 보안 갭 E2E (SEC-E01-06, SEC-E27, GAP-23)', () => {
     // Login as manager and attempt UPDATE on store_settings
     // After migration: only owner can mutate; manager UPDATE is also restricted for certain fields
     await login(page, MANAGER_EMAIL, MANAGER_NEW_PASSWORD)
-    await page.waitForLoadState('networkidle')
+    await expect
+      .poll(() => page.url(), { timeout: 15000 })
+      .toMatch(/\/(admin|change-password)$/)
     if (page.url().includes('change-password')) {
       await completePasswordChange(page, MANAGER_NEW_PASSWORD)
     }
+
+    await waitForAdminShell(page)
 
     const managerHeaders = await supabaseHeaders(page)
 

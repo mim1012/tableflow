@@ -54,6 +54,21 @@ export async function loginAndWaitForAdmin(page: Page, email: string, password: 
   }
 }
 
+export async function waitForAdminShell(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/admin(?:\/|$|\?)/, { timeout: 15000 })
+  await expect(
+    page.locator('body'),
+    '어드민 셸이 렌더되어야 합니다.'
+  ).toContainText(/주방 KDS|대시보드|주문|웨이팅 관리|홀 테이블 현황/, { timeout: 15000 })
+}
+
+export async function waitForCustomerMenuReady(page: Page): Promise<void> {
+  await expect(
+    page.locator('body'),
+    '고객 메뉴 또는 에러 화면이 렌더되어야 합니다.'
+  ).toContainText(/환영합니다|주문 확인|장바구니|이용할 수 없|만료|오류|찾을 수 없|404|page could not be found/i, { timeout: 15000 })
+}
+
 export async function loginAndWaitForPasswordChange(page: Page, email: string, password: string): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt++) {
     await login(page, email, password)
