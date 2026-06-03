@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { formatAlimtalkProviderError } from '../../../src/lib/utils/alimtalkProviderError.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
 // ============================================================
@@ -311,7 +312,7 @@ async function sendViasolapi(payload: Record<string, unknown>, apiKey: string, a
     body: JSON.stringify(payload),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data.message ?? '알림톡 발송 실패')
+  if (!res.ok) throw new Error(formatAlimtalkProviderError(res.status, data))
   return data
 }
 
