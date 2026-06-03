@@ -16,6 +16,17 @@ describe('formatAlimtalkProviderError', () => {
     )
   })
 
+  it('includes raw JSON when provider returns an unstructured object', () => {
+    expect(formatAlimtalkProviderError(402, {
+      groupId: 'G4V202606031254259STVY2MZU1YBPFS',
+      status: 'PENDING',
+      statusCode: '2000',
+      reason: '정상 접수(이통사로 접수 예정)',
+    })).toBe(
+      '알림톡 발송 실패 [status=402, raw={"groupId":"G4V202606031254259STVY2MZU1YBPFS","status":"PENDING","statusCode":"2000","reason":"정상 접수(이통사로 접수 예정)"}]',
+    )
+  })
+
   it('falls back safely when provider payload is not an object', () => {
     expect(formatAlimtalkProviderError(503, 'upstream unavailable')).toBe(
       '알림톡 발송 실패 [status=503, raw="upstream unavailable"]',

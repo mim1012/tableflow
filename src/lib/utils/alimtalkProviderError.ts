@@ -40,6 +40,10 @@ export function formatAlimtalkProviderError(status: number, data: unknown) {
     if (message) parts.push(`message=${message}`)
     if (details) parts.push(`details=${details}`)
     if (firstNestedError) parts.push(`errors[0]=${firstNestedError}`)
+
+    if (parts.length === 1) {
+      parts.push(`raw=${JSON.stringify(data)}`)
+    }
   } else if (typeof data === 'string') {
     parts.push(`raw=${JSON.stringify(data)}`)
   }
