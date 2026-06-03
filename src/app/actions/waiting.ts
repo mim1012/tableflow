@@ -290,12 +290,24 @@ export async function retryWaitingNotificationAction(notificationId: string): Pr
   }
 
   const typedWaiting = waiting as WaitingNotificationWaitingRow | null
-  const retryable = canRetryWaitingNotification(typedLog.event, typedWaiting?.status ?? null, typedWaiting?.phone ?? null)
 
-  if (!typedWaiting || !retryable) {
-    const message = typedWaiting?.phone
-      ? '현재 상태에서는 이 알림을 재시도할 수 없습니다.'
-      : '전화번호가 없어 알림을 재시도할 수 없습니다.'
+  if (!typedWaiting?.phone) {
+    const message = '전화번호가 없어 알림을 재시도할 수 없습니다.'
+
+    await updateWaitingNotificationLog(actionClient, {
+      logId: typedLog.id,
+      status: 'failed',
+      errorMessage: message,
+    })
+
+    return { success: false, message }
+  }
+
+  const phone = typedWaiting.phone
+  const retryable = canRetryWaitingNotification(typedLog.event, typedWaiting.status, phone)
+
+  if (!retryable) {
+    const message = '현재 상태에서는 이 알림을 재시도할 수 없습니다.'
 
     await updateWaitingNotificationLog(actionClient, {
       logId: typedLog.id,
@@ -313,7 +325,7 @@ export async function retryWaitingNotificationAction(notificationId: string): Pr
 
   const type = typedLog.event === 'waiting_created' ? 'WAITING_CREATED' : 'WAITING_CALLED'
   const { error } = await sendWaitingAlimtalk(actionClient, {
-    to: typedWaiting.phone,
+    to: phone,
     type,
     queueNumber: typedWaiting.queue_number,
     storeName,
