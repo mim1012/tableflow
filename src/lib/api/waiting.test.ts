@@ -83,7 +83,7 @@ describe('createWaiting', () => {
     })).rejects.toThrow('waiting creation returned incomplete payload')
   })
 
-  it('should still return waiting result when notification request fails', async () => {
+  it('should still return waiting result when notification request fails without auto retry', async () => {
     vi.mocked(supabase.rpc).mockResolvedValue({
       data: { queue_number: 43, waiting_id: 'w43' },
       error: null,
@@ -99,11 +99,11 @@ describe('createWaiting', () => {
     })).resolves.toEqual({ queueNumber: 43, waitingId: 'w43' })
 
     expect(warnSpy).toHaveBeenCalled()
-    expect(supabase.functions.invoke).toHaveBeenCalledTimes(2)
+    expect(supabase.functions.invoke).toHaveBeenCalledTimes(1)
     warnSpy.mockRestore()
   })
 
-  it('should retry waiting_created notification once before succeeding', async () => {
+  it('should not auto retry waiting_created notification after a temporary failure', async () => {
     vi.mocked(supabase.rpc).mockResolvedValue({
       data: { queue_number: 44, waiting_id: 'w44' },
       error: null,
@@ -120,8 +120,8 @@ describe('createWaiting', () => {
       partySize: 4,
     })).resolves.toEqual({ queueNumber: 44, waitingId: 'w44' })
 
-    expect(supabase.functions.invoke).toHaveBeenCalledTimes(2)
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(supabase.functions.invoke).toHaveBeenCalledTimes(1)
+    expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 })

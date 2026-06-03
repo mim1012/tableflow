@@ -9,7 +9,6 @@ type WaitingCreationPayload = {
   waiting_id: string
 }
 
-const WAITING_CREATED_NOTIFICATION_RETRY_COUNT = 2
 
 function normalizeWaitingCreationPayload(payload: unknown): { queueNumber: number; waitingId: string } {
   if (!payload || typeof payload !== 'object') {
@@ -44,31 +43,20 @@ export async function createWaiting(params: {
 
   const result = normalizeWaitingCreationPayload(data)
 
-  let lastNotifyError: unknown = null
+  try {
+    const { error: notifyError } = await supabase.functions.invoke('send-alimtalk', {
+      body: {
+        type: 'WAITING_CREATED',
+        waitingId: result.waitingId,
+        storeId,
+      },
+    })
 
-  for (let attempt = 0; attempt < WAITING_CREATED_NOTIFICATION_RETRY_COUNT; attempt += 1) {
-    try {
-      const { error: notifyError } = await supabase.functions.invoke('send-alimtalk', {
-        body: {
-          type: 'WAITING_CREATED',
-          waitingId: result.waitingId,
-          storeId,
-        },
-      })
-
-      if (!notifyError) {
-        lastNotifyError = null
-        break
-      }
-
-      lastNotifyError = notifyError
-    } catch (notifyError) {
-      lastNotifyError = notifyError
+    if (notifyError) {
+      console.warn('waiting_created notification request failed', notifyError)
     }
-  }
-
-  if (lastNotifyError) {
-    console.warn('waiting_created notification request failed', lastNotifyError)
+  } catch (notifyError) {
+    console.warn('waiting_created notification request failed', notifyError)
   }
 
   return result
