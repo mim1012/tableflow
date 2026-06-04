@@ -10,13 +10,14 @@ import { supabase } from '@/lib/supabase'
 import { isStoreSubscriptionActive } from '@/lib/utils/subscription'
 import { useOrders } from '@/hooks/useOrders'
 import { useRealtimeTables } from '@/hooks/useRealtimeTables'
-import { primeStaffAlertAudio } from '@/hooks/useOrderNotification'
+import { isStaffAlertSoundEnabled, primeStaffAlertAudio } from '@/hooks/useOrderNotification'
 import { useNotificationPermission } from '@/hooks/useNotificationPermission'
 import { adaptOrder, ORDER_STATUS_MAP } from '@/app/components/admin/types'
 import type { UIOrder, UITable } from '@/app/components/admin/types'
 import type { OrderStatus } from '@/types/database'
 
 import { NotificationDeniedBanner } from '@/app/components/admin/NotificationDeniedBanner'
+import { AlertStatusBadge } from '@/app/components/admin/AlertStatusBadge'
 import KDSPanel from '@/app/components/admin/panels/KDSPanel'
 
 function useCurrentTime() {
@@ -42,7 +43,12 @@ export default function KDSFullscreenClient({
   const storeName = resolvedStoreName || user?.storeName || 'KDS'
   const fullscreenHref = supportMode ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
   const now = useCurrentTime()
-  const { showBanner, dismissBanner, requestPermission } = useNotificationPermission()
+  const { permission: notificationPermission, showBanner, dismissBanner, requestPermission } = useNotificationPermission()
+  const [staffAlertSoundEnabled, setStaffAlertSoundEnabledState] = useState(true)
+
+  useEffect(() => {
+    setStaffAlertSoundEnabledState(isStaffAlertSoundEnabled())
+  }, [])
 
   useEffect(() => {
     const requestOnce = () => {
@@ -220,6 +226,11 @@ export default function KDSFullscreenClient({
               서빙 {completedCount}
             </span>
           </div>
+          <AlertStatusBadge
+            notificationPermission={notificationPermission}
+            soundEnabled={staffAlertSoundEnabled}
+            compact
+          />
         </div>
       </header>
 

@@ -39,6 +39,7 @@ import type { UIOrder, UITable, UIMenu, RecentActivity } from '@/app/components/
 import type { ItemBadge } from '@/types/database'
 
 import { NotificationDeniedBanner } from '@/app/components/admin/NotificationDeniedBanner'
+import { AlertStatusBadge } from '@/app/components/admin/AlertStatusBadge'
 import { StaffManagement } from '@/app/components/admin/StaffManagement'
 import DashboardSummary from '@/app/components/admin/panels/DashboardSummary'
 import KDSPanel from '@/app/components/admin/panels/KDSPanel'
@@ -93,7 +94,7 @@ export default function AdminDashboardClient({
   }, [storeId])
 
   // --- Notification permission ---
-  const { showBanner, dismissBanner, requestPermission } = useNotificationPermission()
+  const { permission: notificationPermission, showBanner, dismissBanner, requestPermission } = useNotificationPermission()
   const [staffAlertSoundEnabled, setStaffAlertSoundEnabledState] = useState(true)
   const [hasHydratedStaffCalls, setHasHydratedStaffCalls] = useState(false)
 
@@ -1156,6 +1157,10 @@ export default function AdminDashboardClient({
               <Volume2 className="w-4 h-4" />
               {staffAlertSoundEnabled ? '알림음 ON' : '알림음 OFF'}
             </button>
+            <AlertStatusBadge
+              notificationPermission={notificationPermission}
+              soundEnabled={staffAlertSoundEnabled}
+            />
             <button className="relative p-2 text-zinc-600 hover:bg-zinc-100 rounded-xl transition-colors">
               <Bell className="w-5 h-5 md:w-6 md:h-6" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
