@@ -5,6 +5,8 @@ import type { OrderStatus, PaymentMethod, SelectedOption } from '@/types/databas
 import { canTransition } from '@/lib/utils/orderStatus'
 import { assertStoreActiveWithClient } from '@/lib/server/storeAccess'
 
+const ORDER_DELETE_ROLES = new Set(['owner', 'manager'])
+
 export interface OrderItemInput {
   menuItemId: string
   menuItemName: string
@@ -87,7 +89,9 @@ export async function deleteOrderAction(orderId: string): Promise<void> {
     .maybeSingle()
 
   if (fetchError || !current) throw fetchError ?? new Error('주문을 찾을 수 없습니다.')
-  await assertStoreActiveWithClient(sb, (current as { store_id: string }).store_id)
+  const storeId = (current as { store_id: string }).store_id
+  await assertStoreActiveWithClient(sb, storeId)
+  await assertCanDeleteOrder(sb, storeId)
 
   const { error } = await sb
     .from('orders')
@@ -116,4 +120,24 @@ export async function updateOrderPaxAction(orderId: string, pax: number): Promis
     .eq('id', orderId)
 
   if (error) throw new Error(`주문 인원 업데이트 실패: ${error.message}`)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function assertCanDeleteOrder(sb: any, storeId: string): Promise<void> {
+  const { data: { user }, error: userError } = await sb.auth.getUser()
+  if (userError || !user) throw new Error('인증이 필요합니다.')
+  if (user.app_metadata?.role === 'super_admin') return
+
+  const { data: member, error: memberError } = await sb
+    .from('store_members')
+    .select('role')
+    .eq('store_id', storeId)
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (memberError) throw new Error(`권한 확인 실패: ${memberError.message}`)
+  if (!member || !ORDER_DELETE_ROLES.has(String(member.role))) {
+    throw new Error('주문 삭제 권한이 없습니다.')
+  }
 }

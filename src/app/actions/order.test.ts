@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fromMock = vi.fn()
+const getUserMock = vi.fn()
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
@@ -43,7 +44,11 @@ function makeDeleteChain(result: { error: { message: string } | null }) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(createClient).mockResolvedValue({ from: fromMock } as any)
+  getUserMock.mockResolvedValue({
+    data: { user: { id: 'user-1', app_metadata: {} } },
+    error: null,
+  })
+  vi.mocked(createClient).mockResolvedValue({ from: fromMock, auth: { getUser: getUserMock } } as any)
   vi.mocked(assertStoreActiveWithClient).mockResolvedValue(undefined)
 })
 
@@ -72,12 +77,25 @@ describe('order lifecycle guards', () => {
     const del = makeDeleteChain({ error: null })
     fromMock
       .mockReturnValueOnce(makeSelectChain({ data: { store_id: 'store-1' }, error: null }))
+      .mockReturnValueOnce(makeSelectChain({ data: { role: 'owner' }, error: null }))
       .mockReturnValueOnce({ delete: del.deleteFn })
 
     await expect(deleteOrderAction('order-1')).resolves.toBeUndefined()
 
     expect(assertStoreActiveWithClient).toHaveBeenCalledWith(expect.anything(), 'store-1')
     expect(del.deleteFn).toHaveBeenCalled()
+  })
+
+  it('rejects staff deletes before mutation', async () => {
+    const del = makeDeleteChain({ error: null })
+    fromMock
+      .mockReturnValueOnce(makeSelectChain({ data: { store_id: 'store-1' }, error: null }))
+      .mockReturnValueOnce(makeSelectChain({ data: { role: 'staff' }, error: null }))
+      .mockReturnValueOnce({ delete: del.deleteFn })
+
+    await expect(deleteOrderAction('order-1')).rejects.toThrow('주문 삭제 권한이 없습니다.')
+
+    expect(del.deleteFn).not.toHaveBeenCalled()
   })
 
   it('checks the order store before pax updates', async () => {

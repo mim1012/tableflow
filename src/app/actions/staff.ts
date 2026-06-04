@@ -55,15 +55,29 @@ export async function createStaffAction(
 
 export async function deactivateStaffAction(memberId: string, storeId: string): Promise<void> {
   const supabase = await createClient()
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError || !session) throw new Error('인증 세션이 없습니다.')
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
   await assertStoreActiveWithClient(sb, storeId)
 
-  const { error } = await sb
-    .from('store_members')
-    .delete()
-    .eq('id', memberId)
-    .eq('store_id', storeId)
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !anonKey) throw new Error('Supabase 환경 변수가 누락되었습니다.')
 
-  if (error) throw new Error(`직원 비활성화 실패: ${error.message}`)
+  const res = await fetch(`${supabaseUrl}/functions/v1/staff-admin?action=set-active`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: anonKey,
+    },
+    body: JSON.stringify({ storeId, memberId, isActive: false }),
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error ?? data.message ?? `직원 비활성화 실패 (HTTP ${res.status})`)
+  }
 }
