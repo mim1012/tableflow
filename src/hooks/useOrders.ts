@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { toast } from 'sonner'
 import { supabase as _supabase } from '@/lib/supabase'
+import { deleteOrderAction, updateOrderPaxAction, updateOrderStatusAction } from '@/app/actions/order'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const supabase = _supabase as any
-import { deleteOrder as apiDeleteOrder, getOrders, updateOrderStatus as apiUpdateOrderStatus, updateOrderPax as apiUpdateOrderPax } from '@/lib/api/admin'
+import { getOrders } from '@/lib/api/admin'
 import type { OrderRow, OrderItemRow, OrderStatus } from '@/types/database'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import { notifyNewOrder, notifyOrderStatusChanged } from '@/hooks/useOrderNotification'
@@ -148,7 +149,7 @@ export function useOrders(storeId: string | null) {
 
   const updateOrderStatus = useCallback(async (orderId: string, status: OrderStatus) => {
     try {
-      await apiUpdateOrderStatus(orderId, status)
+      await updateOrderStatusAction(orderId, status)
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, status } : o))
       )
@@ -160,7 +161,7 @@ export function useOrders(storeId: string | null) {
 
   const deleteOrder = useCallback(async (orderId: string) => {
     try {
-      await apiDeleteOrder(orderId)
+      await deleteOrderAction(orderId)
       setOrders((prev) => prev.filter((o) => o.id !== orderId))
     } catch (err) {
       console.error('useOrders deleteOrder:', err)
@@ -170,7 +171,7 @@ export function useOrders(storeId: string | null) {
 
   const updateOrderPax = useCallback(async (orderId: string, pax: number) => {
     try {
-      await apiUpdateOrderPax(orderId, pax)
+      await updateOrderPaxAction(orderId, pax)
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, pax } : o))
       )

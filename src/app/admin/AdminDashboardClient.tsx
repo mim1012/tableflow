@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import {
   Bell, ChefHat, CheckCircle2, RefreshCcw, LayoutDashboard, LayoutGrid,
   UtensilsCrossed, Settings, BarChart4, Users, Receipt, Search, LogOut,
@@ -18,10 +18,9 @@ import { addTableAction, renameTableAction, deleteTableAction } from '@/app/acti
 import { fetchCustomers, fetchStorePointEvents, grantPoints, createCustomerByPhone, setKakaoFriend } from '@/lib/api/customers'
 import type { OrderStats, TopMenuItem, CategorySales } from '@/lib/api/admin'
 import { createOrder } from '@/lib/api/order'
-import { completeWaiting as apiCompleteWaiting } from '@/lib/api/waiting'
 import { getStoreSettings, updateStoreStaffCallOptions, updateStoreWaitingMinutesPerTeam } from '@/lib/api/storeSettings'
 import { resolveStaffCall as apiResolveStaffCall } from '@/lib/api/staffCall'
-import { callWaitingAction, listFailedWaitingNotificationsAction, retryWaitingNotificationAction } from '@/app/actions/waiting'
+import { callWaitingAction, completeWaitingAction, listFailedWaitingNotificationsAction, retryWaitingNotificationAction } from '@/app/actions/waiting'
 
 import { notifyStaffCall, primeStaffAlertAudio, isStaffAlertSoundEnabled, setStaffAlertSoundEnabled } from '@/hooks/useOrderNotification'
 import { useOrders } from '@/hooks/useOrders'
@@ -70,14 +69,20 @@ function toUICustomer(c: {
   return { id: c.id, name: c.name, profileImage: c.profileImage, phone: c.phone, kakaoFriend: c.kakaoFriend, points: c.totalPoints, visitCount: c.visitCount, lastVisitedAt: c.lastVisitedAt }
 }
 
-export default function AdminDashboardClient() {
+export default function AdminDashboardClient({
+  resolvedStoreId,
+  resolvedStoreName,
+  supportMode = false,
+}: {
+  resolvedStoreId: string
+  resolvedStoreName: string
+  supportMode?: boolean
+}) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const { user, isFirstLogin, signOut } = useAuth()
-  // super_admin can override storeId via ?storeId= query param
-  const queryStoreId = searchParams.get('storeId')
-  const storeId = queryStoreId || user?.storeId || ''
-  const kdsFullscreenHref = storeId ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
+  const storeId = resolvedStoreId
+  const storeName = resolvedStoreName || user?.storeName || ''
+  const kdsFullscreenHref = supportMode ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
 
   // --- Store slug for QR URLs ---
   const [storeSlug, setStoreSlug] = useState('')
@@ -511,7 +516,7 @@ export default function AdminDashboardClient() {
 
   const completeWaiting = async (waitingId: string, queueNumber: number) => {
     try {
-      await apiCompleteWaiting(waitingId)
+      await completeWaitingAction(waitingId)
       setWaitingStatusOverrides((prev) => new Map(prev).set(waitingId, 'completed'))
       toast.success(`대기 ${queueNumber}번 고객님 입장이 완료되었습니다.`)
     } catch {
@@ -1076,10 +1081,10 @@ export default function AdminDashboardClient() {
         <div className="p-4 border-t border-zinc-800/50">
           <div className="bg-zinc-900 rounded-2xl p-4 flex items-center gap-3 mb-3 border border-zinc-800">
             <div className="w-10 h-10 bg-zinc-800 rounded-xl flex items-center justify-center font-bold text-white shrink-0">
-              {(user.storeName ?? '').slice(0, 2)}
+              {storeName.slice(0, 2)}
             </div>
             <div className="truncate">
-              <p className="text-white font-bold text-sm truncate">{user.storeName ?? ''}</p>
+              <p className="text-white font-bold text-sm truncate">{storeName}</p>
               <p className="text-[11px] text-zinc-500 font-medium mt-0.5">
                 {user.role === 'owner' ? '최고관리자' : user.role === 'manager' ? '매니저' : '직원'}
               </p>

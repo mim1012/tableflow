@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import type { WaitingStatus } from '@/types/database'
+import { assertStoreActiveWithClient } from '@/lib/server/storeAccess'
 
 type WaitingAlimtalkType = 'WAITING_CREATED' | 'WAITING_CALLED'
 type WaitingNotificationEvent = 'waiting_created' | 'waiting_called'
@@ -211,6 +212,7 @@ export async function listFailedWaitingNotificationsAction(storeId: string): Pro
 
   const supabase = await createClient()
   const sb = supabase as any
+  await assertStoreActiveWithClient(sb, storeId)
 
   const { data: logs, error: logsError } = await sb
     .from('waiting_notifications')
@@ -278,6 +280,7 @@ export async function retryWaitingNotificationAction(notificationId: string): Pr
   if (!typedLog) {
     return { success: false, message: '알림 이력을 찾을 수 없습니다.' }
   }
+  await assertStoreActiveWithClient(actionClient, typedLog.store_id)
 
   const { data: waiting, error: waitingError } = await sb
     .from('waitings')
@@ -451,6 +454,7 @@ export async function createWaitingAction(
   const supabase = await createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+  await assertStoreActiveWithClient(sb, storeId)
   const serviceClient = getServiceClient()
 
   let result: { queueNumber: number; waitingId: string }
@@ -535,6 +539,7 @@ export async function cancelWaitingAction(
   if (waiting.status !== 'waiting' && waiting.status !== 'called') {
     throw new Error('이미 종료된 대기입니다.')
   }
+  await assertStoreActiveWithClient(lookupClient, waiting.store_id)
 
   await cancelWaitingWithClient(serviceClient ?? sb, waitingId)
 }
@@ -555,6 +560,7 @@ export async function callWaitingAction(waitingId: string): Promise<void> {
   if (waitingError || !waiting) {
     throw new Error('대기 정보를 찾을 수 없습니다.')
   }
+  await assertStoreActiveWithClient(serviceClient ?? sb, waiting.store_id)
 
   if (waiting.status !== 'waiting') {
     return
@@ -588,13 +594,14 @@ export async function completeWaitingAction(waitingId: string): Promise<void> {
 
   const { data: waiting, error: waitingError } = await sb
     .from('waitings')
-    .select('status')
+    .select('status, store_id')
     .eq('id', waitingId)
     .single()
 
   if (waitingError || !waiting) {
     throw new Error('대기 정보를 찾을 수 없습니다.')
   }
+  await assertStoreActiveWithClient(sb, waiting.store_id)
 
   if (waiting.status !== 'called') {
     return

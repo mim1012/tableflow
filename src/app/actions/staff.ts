@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { assertStoreActiveWithClient } from '@/lib/server/storeAccess'
 
 export async function createStaffAction(
   storeId: string,
@@ -20,6 +21,7 @@ export async function createStaffAction(
   // 호출자가 해당 매장의 owner 또는 manager인지 검증
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+  await assertStoreActiveWithClient(sb, storeId)
   const { data: member } = await sb
     .from('store_members')
     .select('role')
@@ -55,6 +57,7 @@ export async function deactivateStaffAction(memberId: string, storeId: string): 
   const supabase = await createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+  await assertStoreActiveWithClient(sb, storeId)
 
   const { error } = await sb
     .from('store_members')

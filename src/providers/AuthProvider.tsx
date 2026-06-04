@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { StoreUser } from '@/types/auth'
+import { isStoreSubscriptionActive } from '@/lib/utils/subscription'
 
 interface AuthContextValue {
   user: StoreUser | null
@@ -41,21 +42,22 @@ export function NextAuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data, error } = await supabase
       .from('store_members')
-      .select('role, store_id, is_first_login, is_active, stores(name)')
+      .select('role, store_id, is_first_login, is_active, stores(name, is_active, subscription_end)')
       .eq('user_id', supabaseUserId)
-      .single()
+      .eq('is_active', true)
+      .limit(2)
 
-    if (error || !data) return null
+    if (error || !data || data.length !== 1) return null
 
-    const row = data as unknown as {
+    const row = data[0] as unknown as {
       role: string
       store_id: string
       is_first_login: boolean | null
       is_active: boolean | null
-      stores: { name?: string } | null
+      stores: { name?: string; is_active: boolean; subscription_end: string | null } | null
     }
 
-    if (row.is_active === false) return null
+    if (row.is_active === false || !isStoreSubscriptionActive(row.stores)) return null
 
     const storeUserFirstLogin = row.is_first_login ?? false
     setIsFirstLogin(storeUserFirstLogin)

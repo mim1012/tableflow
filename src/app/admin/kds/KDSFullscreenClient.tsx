@@ -2,7 +2,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
 import { ChefHat, ArrowLeft, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -26,12 +25,19 @@ function useCurrentTime() {
   return now
 }
 
-export default function KDSFullscreenClient() {
-  const searchParams = useSearchParams()
+export default function KDSFullscreenClient({
+  resolvedStoreId,
+  resolvedStoreName,
+  supportMode = false,
+}: {
+  resolvedStoreId: string
+  resolvedStoreName: string
+  supportMode?: boolean
+}) {
   const { user, loading: authLoading } = useAuth()
-  const queryStoreId = searchParams.get('storeId')
-  const storeId = queryStoreId || user?.storeId || ''
-  const fullscreenHref = storeId ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
+  const storeId = resolvedStoreId
+  const storeName = resolvedStoreName || user?.storeName || 'KDS'
+  const fullscreenHref = supportMode ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
   const now = useCurrentTime()
 
   // --- Subscription check ---
@@ -174,7 +180,7 @@ export default function KDSFullscreenClient() {
           <div className="w-px h-6 bg-zinc-200" />
           <div className="flex items-center gap-2">
             <ChefHat className="w-5 h-5 text-orange-500" />
-            <span className="text-zinc-900 font-black text-base">{user.storeName ?? 'KDS'}</span>
+            <span className="text-zinc-900 font-black text-base">{storeName}</span>
           </div>
         </div>
 

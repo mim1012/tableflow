@@ -59,6 +59,21 @@ interface Payload {
   storeId: string
 }
 
+async function ensureStoreActive(adminClient: ReturnType<typeof createClient>, storeId: string) {
+  const { data, error } = await adminClient
+    .from('stores')
+    .select('is_active, subscription_end')
+    .eq('id', storeId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Store not found')
+  const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  if (!data.is_active || (data.subscription_end && data.subscription_end < todayKst)) {
+    throw new Error('Store unavailable')
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return json({ ok: true }, {}, req)
@@ -101,11 +116,21 @@ serve(async (req) => {
     return json({ error: 'Password policy violation' }, { status: 400 }, req)
   }
 
+  try {
+    await ensureStoreActive(adminClient, storeId)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    if (message === 'Store unavailable') return json({ error: message }, { status: 403 }, req)
+    if (message === 'Store not found') return json({ error: message }, { status: 404 }, req)
+    return json({ error: message }, { status: 500 }, req)
+  }
+
   const { data: requesterMember, error: requesterError } = await adminClient
     .from('store_members')
     .select('role')
     .eq('user_id', user.id)
     .eq('store_id', storeId)
+    .eq('is_active', true)
     .maybeSingle()
 
   if (requesterError) {

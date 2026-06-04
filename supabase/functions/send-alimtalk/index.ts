@@ -102,6 +102,24 @@ function isServiceRoleRequest(authHeader: string | null, serviceRoleKey: string 
   return Boolean(authHeader && serviceRoleKey && authHeader === `Bearer ${serviceRoleKey}`)
 }
 
+async function verifyStoreActive(adminClient: any, storeId: string): Promise<CallerVerificationResult> {
+  const { data, error } = await adminClient
+    .from('stores')
+    .select('is_active, subscription_end')
+    .eq('id', storeId)
+    .maybeSingle()
+
+  if (error) return { ok: false, status: 500, error: error.message }
+  if (!data) return { ok: false, status: 404, error: 'Store not found' }
+
+  const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  if (!data.is_active || (data.subscription_end && data.subscription_end < todayKst)) {
+    return { ok: false, status: 403, error: 'Store unavailable' }
+  }
+
+  return { ok: true }
+}
+
 async function verifyCallerCanSendForStore(
   req: Request,
   adminClient: any,
@@ -146,6 +164,7 @@ async function verifyCallerCanSendForStore(
     .eq('store_id', storeId)
     .eq('user_id', user.id)
     .in('role', ['owner', 'manager', 'staff'])
+    .eq('is_active', true)
     .maybeSingle()
 
   if (memberError) {
@@ -443,6 +462,13 @@ serve(async (req: Request) => {
           { status: 400, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
         )
       }
+      const storeVerification = await verifyStoreActive(adminClient, storeId)
+      if (!storeVerification.ok) {
+        return new Response(
+          JSON.stringify({ error: storeVerification.error }),
+          { status: storeVerification.status, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
 
       const target = await getWaitingMessageTarget(adminClient, { storeId, waitingId })
       if (target.waitingStatus !== 'waiting') {
@@ -481,6 +507,13 @@ serve(async (req: Request) => {
         return new Response(
           JSON.stringify({ error: 'WAITING_CALLED는 storeId와 waitingId가 필요합니다.' }),
           { status: 400, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
+        )
+      }
+      const storeVerification = await verifyStoreActive(adminClient, storeId)
+      if (!storeVerification.ok) {
+        return new Response(
+          JSON.stringify({ error: storeVerification.error }),
+          { status: storeVerification.status, headers: { ...corsHeaders(req), 'Content-Type': 'application/json' } },
         )
       }
 

@@ -105,6 +105,21 @@ async function getTargetMember(adminClient: ReturnType<typeof createClient>, sto
   return data as StaffMemberRow | null
 }
 
+async function ensureStoreActive(adminClient: ReturnType<typeof createClient>, storeId: string) {
+  const { data, error } = await adminClient
+    .from('stores')
+    .select('is_active, subscription_end')
+    .eq('id', storeId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Store not found')
+  const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  if (!data.is_active || (data.subscription_end && data.subscription_end < todayKst)) {
+    throw new Error('Store unavailable')
+  }
+}
+
 function ensureCanManage(requesterRole: StoreRole, targetRole?: StoreRole) {
   if (!STAFF_CREATOR_ROLES.includes(requesterRole)) {
     throw new Error('Forbidden')
@@ -146,6 +161,7 @@ serve(async (req) => {
     if (action === 'list') {
       const storeId = url.searchParams.get('storeId')
       if (!storeId) return json({ error: 'storeId query param is required' }, { status: 400 }, req)
+      await ensureStoreActive(adminClient, storeId)
 
       const requesterMember = await getRequesterAccess(adminClient, storeId, user, isSuperAdmin)
       if (!requesterMember?.is_active) return json({ error: 'Forbidden' }, { status: 403 }, req)
@@ -201,6 +217,7 @@ serve(async (req) => {
       if (!PASSWORD_PATTERN.test(password)) {
         return json({ error: '비밀번호는 영문/숫자/특수문자를 포함한 8자 이상이어야 합니다.' }, { status: 400 }, req)
       }
+      await ensureStoreActive(adminClient, storeId)
 
       const requesterMember = await getRequesterAccess(adminClient, storeId, user, isSuperAdmin)
       if (!requesterMember?.is_active) return json({ error: 'Forbidden' }, { status: 403 }, req)
@@ -248,6 +265,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({})) as Record<string, unknown>
     const storeId = typeof body.storeId === 'string' ? body.storeId : ''
     if (!storeId) return json({ error: 'storeId is required' }, { status: 400 }, req)
+    await ensureStoreActive(adminClient, storeId)
 
     const requesterMember = await getRequesterAccess(adminClient, storeId, user, isSuperAdmin)
     if (!requesterMember?.is_active) return json({ error: 'Forbidden' }, { status: 403 }, req)
@@ -391,6 +409,12 @@ serve(async (req) => {
     const message = err instanceof Error ? err.message : 'Unknown error'
     if (message === 'Forbidden') {
       return json({ error: 'Forbidden' }, { status: 403 }, req)
+    }
+    if (message === 'Store unavailable') {
+      return json({ error: 'Store unavailable' }, { status: 403 }, req)
+    }
+    if (message === 'Store not found') {
+      return json({ error: 'Store not found' }, { status: 404 }, req)
     }
     return json({ error: message }, { status: 500 }, req)
   }

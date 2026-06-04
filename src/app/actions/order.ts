@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { OrderStatus, PaymentMethod, SelectedOption } from '@/types/database'
 import { canTransition } from '@/lib/utils/orderStatus'
+import { assertStoreActiveWithClient } from '@/lib/server/storeAccess'
 
 export interface OrderItemInput {
   menuItemId: string
@@ -24,6 +25,7 @@ export async function createOrderAction(params: {
   const supabase = await createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+  await assertStoreActiveWithClient(sb, params.storeId)
 
   const { data, error } = await sb.rpc('create_order_atomic', {
     p_store_id: params.storeId,
@@ -54,13 +56,14 @@ export async function updateOrderStatusAction(
 
   const { data: current, error: fetchError } = await sb
     .from('orders')
-    .select('status')
+    .select('status, store_id')
     .eq('id', orderId)
     .single()
 
   if (fetchError || !current) throw fetchError ?? new Error('주문을 찾을 수 없습니다.')
 
-  const row = current as { status: string }
+  const row = current as { status: string; store_id: string }
+  await assertStoreActiveWithClient(sb, row.store_id)
   if (row.status !== newStatus && !canTransition(row.status as OrderStatus, newStatus)) {
     throw new Error(`유효하지 않은 상태 전환: ${row.status} → ${newStatus}`)
   }
@@ -77,6 +80,14 @@ export async function deleteOrderAction(orderId: string): Promise<void> {
   const supabase = await createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
+  const { data: current, error: fetchError } = await sb
+    .from('orders')
+    .select('store_id')
+    .eq('id', orderId)
+    .maybeSingle()
+
+  if (fetchError || !current) throw fetchError ?? new Error('주문을 찾을 수 없습니다.')
+  await assertStoreActiveWithClient(sb, (current as { store_id: string }).store_id)
 
   const { error } = await sb
     .from('orders')
@@ -84,4 +95,25 @@ export async function deleteOrderAction(orderId: string): Promise<void> {
     .eq('id', orderId)
 
   if (error) throw new Error(`주문 삭제 실패: ${error.message}`)
+}
+
+export async function updateOrderPaxAction(orderId: string, pax: number): Promise<void> {
+  const supabase = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const { data: current, error: fetchError } = await sb
+    .from('orders')
+    .select('store_id')
+    .eq('id', orderId)
+    .maybeSingle()
+
+  if (fetchError || !current) throw fetchError ?? new Error('주문을 찾을 수 없습니다.')
+  await assertStoreActiveWithClient(sb, (current as { store_id: string }).store_id)
+
+  const { error } = await sb
+    .from('orders')
+    .update({ pax })
+    .eq('id', orderId)
+
+  if (error) throw new Error(`주문 인원 업데이트 실패: ${error.message}`)
 }

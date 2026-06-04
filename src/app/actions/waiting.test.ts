@@ -13,8 +13,13 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(),
 }))
 
+vi.mock('@/lib/server/storeAccess', () => ({
+  assertStoreActiveWithClient: vi.fn(),
+}))
+
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { assertStoreActiveWithClient } from '@/lib/server/storeAccess'
 import { createWaitingAction, cancelWaitingAction, callWaitingAction, retryWaitingNotificationAction } from './waiting'
 
 function makeSelectChain(result: { data: unknown; error: { message: string } | null; count?: number | null }) {
@@ -62,6 +67,8 @@ beforeEach(() => {
   serviceFromMock.mockReset()
   serverFromMock.mockReset()
   functionsInvokeMock.mockReset()
+  vi.mocked(assertStoreActiveWithClient).mockReset()
+  vi.mocked(assertStoreActiveWithClient).mockResolvedValue(undefined)
 
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://example.supabase.co'
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key'
@@ -279,6 +286,20 @@ describe('cancelWaitingAction', () => {
 })
 
 describe('callWaitingAction', () => {
+  it('checks the waiting store before mutating ID-only calls', async () => {
+    serverFromMock.mockReturnValueOnce(
+      makeSelectChain({
+        data: { phone: null, queue_number: 12, store_id: 'store-1', status: 'waiting' },
+        error: null,
+      }) as any,
+    )
+
+    vi.mocked(assertStoreActiveWithClient).mockRejectedValueOnce(new Error('비활성 또는 만료된 매장입니다.'))
+
+    await expect(callWaitingAction('waiting-1')).rejects.toThrow('비활성 또는 만료된 매장입니다.')
+    expect(assertStoreActiveWithClient).toHaveBeenCalledWith(expect.anything(), 'store-1')
+  })
+
   it('calls waiting and sends WAITING_CALLED alimtalk with live queue mapping', async () => {
     serverFromMock
       .mockReturnValueOnce(
@@ -466,6 +487,28 @@ describe('callWaitingAction', () => {
 })
 
 describe('retryWaitingNotificationAction', () => {
+  it('checks the notification store before retrying ID-only notifications', async () => {
+    serverFromMock.mockReturnValueOnce(
+      makeSelectChain({
+        data: {
+          id: 'notif-1',
+          waiting_id: 'waiting-1',
+          store_id: 'store-1',
+          event: 'waiting_created',
+          status: 'failed',
+          error_msg: 'provider down',
+          created_at: '2026-06-02T10:00:00.000Z',
+        },
+        error: null,
+      }) as any,
+    )
+
+    vi.mocked(assertStoreActiveWithClient).mockRejectedValueOnce(new Error('비활성 또는 만료된 매장입니다.'))
+
+    await expect(retryWaitingNotificationAction('notif-1')).rejects.toThrow('비활성 또는 만료된 매장입니다.')
+    expect(functionsInvokeMock).not.toHaveBeenCalled()
+  })
+
   it('retries a failed WAITING_CREATED notification when the waiting is still active', async () => {
     serverFromMock
       .mockReturnValueOnce(

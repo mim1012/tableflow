@@ -2,6 +2,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
+import { assertStoreActiveWithClient } from '@/lib/server/storeAccess'
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -27,11 +28,13 @@ async function assertOwnerOrManager(storeId: string): Promise<void> {
 
   // Service role로 멤버십 조회 — Server Action에서 RLS auth.uid() 미설정 이슈 우회
   const serviceClient = getServiceClient()
+  await assertStoreActiveWithClient(serviceClient, storeId)
   const { data: member } = await serviceClient
     .from('store_members')
     .select('role')
     .eq('store_id', storeId)
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .single()
   if (!member || !['owner', 'manager'].includes(member.role as string)) {
     throw new Error('권한이 없습니다.')
@@ -47,11 +50,13 @@ async function assertStoreAccess(storeId: string): Promise<void> {
 
   // Service role로 멤버십 조회 — Server Action에서 RLS auth.uid() 미설정 이슈 우회
   const serviceClient = getServiceClient()
+  await assertStoreActiveWithClient(serviceClient, storeId)
   const { data: member } = await serviceClient
     .from('store_members')
     .select('role')
     .eq('store_id', storeId)
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .single()
   if (!member) throw new Error('권한이 없습니다.')
 }
