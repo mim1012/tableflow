@@ -25,12 +25,19 @@
 ### 4. 이용 기간 관리
 - [x] `stores` 테이블에 `subscription_start`, `subscription_end`, `is_active` 컬럼 추가
 - [x] 만료 또는 `is_active=false` 시 `/admin`, `/m/:storeSlug/:tableId` 접근 차단
-- [x] 슈퍼어드민은 기간/상태 무관 항상 접근 가능
+- [x] 슈퍼어드민은 `/superadmin`에서 기간/상태 무관 매장 점검 가능
+- [x] 만료 또는 `is_active=false` 매장은 슈퍼어드민도 `/admin` 운영 화면으로 런칭하지 않음
 
 ### 5. 슈퍼어드민
 - [x] `/superadmin` 라우트 — 개발사 전용 패널
 - [x] 기능: 매장 CRUD, 점주 계정 생성, 이용기간 설정, 강제 정지
 - [x] 슈퍼어드민 식별: `app_metadata.role = 'super_admin'` (RBAC)
+
+### 5-1. 파일럿 멀티테넌트 운영 계약
+- [x] 일반 관리자/직원 계정은 **활성 매장 1개** 소속만 허용하는 단일 매장 principal로 취급
+- [x] `/admin`, `/admin/kds`의 매장 context는 서버에서 확정하며 일반 사용자의 `?storeId=` override는 신뢰하지 않음
+- [x] 주문/대기처럼 id만 받는 운영 mutation은 대상 row의 `store_id`를 먼저 확인하고 활성 매장 guard를 통과한 뒤 실행
+- [x] 여러 활성 매장을 한 계정이 운영하는 프랜차이즈 모델은 별도 매장 선택 UX가 생기기 전까지 보류
 
 ### 6. 배포 인프라
 - [x] 프론트: **Vercel** (React SPA)
@@ -74,6 +81,7 @@
 
 ### 다점포
 - [ ] 프랜차이즈 통합 대시보드 스펙
+- [ ] 일반 사용자 다매장 선택 UX 및 권한 모델
 
 ### 법적 페이지
 - [ ] 개인정보처리방침 / 이용약관
