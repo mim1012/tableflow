@@ -10,10 +10,13 @@ import { supabase } from '@/lib/supabase'
 import { isStoreSubscriptionActive } from '@/lib/utils/subscription'
 import { useOrders } from '@/hooks/useOrders'
 import { useRealtimeTables } from '@/hooks/useRealtimeTables'
+import { primeStaffAlertAudio } from '@/hooks/useOrderNotification'
+import { useNotificationPermission } from '@/hooks/useNotificationPermission'
 import { adaptOrder, ORDER_STATUS_MAP } from '@/app/components/admin/types'
 import type { UIOrder, UITable } from '@/app/components/admin/types'
 import type { OrderStatus } from '@/types/database'
 
+import { NotificationDeniedBanner } from '@/app/components/admin/NotificationDeniedBanner'
 import KDSPanel from '@/app/components/admin/panels/KDSPanel'
 
 function useCurrentTime() {
@@ -39,6 +42,22 @@ export default function KDSFullscreenClient({
   const storeName = resolvedStoreName || user?.storeName || 'KDS'
   const fullscreenHref = supportMode ? `/admin/kds?storeId=${encodeURIComponent(storeId)}` : '/admin/kds'
   const now = useCurrentTime()
+  const { showBanner, dismissBanner, requestPermission } = useNotificationPermission()
+
+  useEffect(() => {
+    const requestOnce = () => {
+      window.removeEventListener('pointerdown', requestOnce)
+      window.removeEventListener('keydown', requestOnce)
+      void requestPermission()
+      void primeStaffAlertAudio()
+    }
+    window.addEventListener('pointerdown', requestOnce, { once: true })
+    window.addEventListener('keydown', requestOnce, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', requestOnce)
+      window.removeEventListener('keydown', requestOnce)
+    }
+  }, [requestPermission])
 
   // --- Subscription check ---
   const [storeExpired, setStoreExpired] = useState(false)
@@ -167,6 +186,7 @@ export default function KDSFullscreenClient({
 
   return (
     <div className="min-h-screen bg-zinc-100 flex flex-col">
+      {showBanner && <NotificationDeniedBanner onDismiss={dismissBanner} />}
       {/* Header Bar */}
       <header className="h-14 bg-white border-b border-zinc-200 px-4 md:px-6 flex items-center justify-between shrink-0 shadow-sm">
         <div className="flex items-center gap-3">
